@@ -46,11 +46,17 @@ use soroban_sdk::{
 
 use errors::StreamError;
 use events::{
-    AdminTransferredEvent, ContractUpgradedEvent, EmergencyGuardianUpdatedEvent, FeeCollectedEvent,
-    FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
-    ProtocolPauseStatusEvent, StateMigratedEvent, StepVestingStreamCreatedEvent,
-    StreamCancelledEvent, StreamCompletedEvent, StreamCreatedEvent, StreamPausedEvent,
-    StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
+    emit_admin_transferred, emit_contract_upgraded, emit_emergency_guardian_updated,
+    emit_fee_collected, emit_fee_config_updated, emit_hybrid_cliff_stream_created,
+    emit_initialized, emit_protocol_pause_status, emit_state_migrated,
+    emit_step_vesting_stream_created, emit_stream_cancelled, emit_stream_closed,
+    emit_stream_completed, emit_stream_created, emit_stream_paused, emit_stream_resumed,
+    emit_stream_topped_up, emit_tokens_withdrawn, AdminTransferredEvent, ContractUpgradedEvent,
+    EmergencyGuardianUpdatedEvent, FeeCollectedEvent, FeeConfigUpdatedEvent,
+    HybridCliffStreamCreatedEvent, InitializedEvent, ProtocolPauseStatusEvent, StateMigratedEvent,
+    StepVestingStreamCreatedEvent, StreamCancelledEvent, StreamClosedEvent, StreamCompletedEvent,
+    StreamCreatedEvent, StreamPausedEvent, StreamResumedEvent, StreamToppedUpEvent,
+    TokensWithdrawnEvent,
 };
 use storage::{
     config_exists, get_contract_version, get_recorded_wasm_hash, load_config, load_stream,
@@ -116,8 +122,8 @@ impl StreamContract {
         );
         save_contract_version(&env, CURRENT_DATA_VERSION);
 
-        env.events().publish(
-            (Symbol::new(&env, "initialized"),),
+        emit_initialized(
+            &env,
             InitializedEvent {
                 admin,
                 treasury,
@@ -163,8 +169,8 @@ impl StreamContract {
             },
         );
 
-        env.events().publish(
-            (Symbol::new(&env, "fee_config_updated"),),
+        emit_fee_config_updated(
+            &env,
             FeeConfigUpdatedEvent {
                 admin,
                 old_treasury: config.treasury,
@@ -215,8 +221,8 @@ impl StreamContract {
             },
         );
 
-        env.events().publish(
-            (Symbol::new(&env, "admin_transferred"),),
+        emit_admin_transferred(
+            &env,
             AdminTransferredEvent {
                 previous_admin: current_admin,
                 new_admin,
@@ -276,8 +282,8 @@ impl StreamContract {
         config.is_protocol_paused = paused;
         save_config(&env, &config);
 
-        env.events().publish(
-            (Symbol::new(&env, "protocol_pause_status"),),
+        emit_protocol_pause_status(
+            &env,
             ProtocolPauseStatusEvent {
                 caller,
                 paused,
@@ -319,8 +325,8 @@ impl StreamContract {
         config.emergency_guardian = guardian.clone();
         save_config(&env, &config);
 
-        env.events().publish(
-            (Symbol::new(&env, "emergency_guardian_updated"),),
+        emit_emergency_guardian_updated(
+            &env,
             EmergencyGuardianUpdatedEvent { admin, guardian },
         );
 
@@ -418,8 +424,8 @@ impl StreamContract {
             },
         );
 
-        env.events().publish(
-            (Symbol::new(&env, "stream_created"), stream_id),
+        emit_stream_created(
+            &env,
             StreamCreatedEvent {
                 stream_id,
                 sender,
@@ -524,8 +530,8 @@ impl StreamContract {
             },
         );
 
-        env.events().publish(
-            (Symbol::new(&env, "step_vesting_stream_created"), stream_id),
+        emit_step_vesting_stream_created(
+            &env,
             StepVestingStreamCreatedEvent {
                 stream_id,
                 sender,
@@ -616,8 +622,8 @@ impl StreamContract {
             },
         );
 
-        env.events().publish(
-            (Symbol::new(&env, "hybrid_cliff_stream_created"), stream_id),
+        emit_hybrid_cliff_stream_created(
+            &env,
             HybridCliffStreamCreatedEvent {
                 stream_id,
                 sender,
@@ -740,8 +746,8 @@ impl StreamContract {
         save_stream(&env, stream_id, &stream);
 
         // Emit top-up event
-        env.events().publish(
-            (Symbol::new(&env, "stream_topped_up"), stream_id),
+        emit_stream_topped_up(
+            &env,
             StreamToppedUpEvent {
                 stream_id,
                 sender,
@@ -1024,8 +1030,8 @@ impl StreamContract {
 
         let completed = stream.status == StreamStatus::Completed;
 
-        env.events().publish(
-            (Symbol::new(&env, "tokens_withdrawn"), stream_id),
+        emit_tokens_withdrawn(
+            &env,
             TokensWithdrawnEvent {
                 stream_id,
                 recipient: recipient.clone(),
@@ -1036,8 +1042,8 @@ impl StreamContract {
 
         // Emit COMPLETED event on final withdrawal
         if completed {
-            env.events().publish(
-                (Symbol::new(&env, "stream_completed"), stream_id),
+            emit_stream_completed(
+                &env,
                 StreamCompletedEvent {
                     stream_id,
                     recipient,
@@ -1111,8 +1117,8 @@ impl StreamContract {
         }
 
         // Emit cancellation event
-        env.events().publish(
-            (Symbol::new(&env, "stream_cancelled"), stream_id),
+        emit_stream_cancelled(
+            &env,
             StreamCancelledEvent {
                 stream_id,
                 sender,
@@ -1183,8 +1189,8 @@ impl StreamContract {
         remove_stream(&env, stream_id);
 
         let timestamp = env.ledger().timestamp();
-        env.events().publish(
-            (Symbol::new(&env, "stream_closed"), stream_id),
+        emit_stream_closed(
+            &env,
             StreamClosedEvent {
                 stream_id,
                 closer: caller,
@@ -1219,8 +1225,8 @@ impl StreamContract {
         stream.status = StreamStatus::Paused;
         save_stream(&env, stream_id, &stream);
 
-        env.events().publish(
-            (Symbol::new(&env, "stream_paused"), stream_id),
+        emit_stream_paused(
+            &env,
             StreamPausedEvent {
                 stream_id,
                 sender,
@@ -1303,8 +1309,8 @@ impl StreamContract {
         stream.status = StreamStatus::Active;
         save_stream(&env, stream_id, &stream);
 
-        env.events().publish(
-            (Symbol::new(&env, "stream_resumed"), stream_id),
+        emit_stream_resumed(
+            &env,
             StreamResumedEvent {
                 stream_id,
                 sender,
@@ -1384,8 +1390,8 @@ impl StreamContract {
 
             let completed = stream.status == StreamStatus::Completed;
 
-            env.events().publish(
-                (Symbol::new(&env, "tokens_withdrawn"), stream_id),
+            emit_tokens_withdrawn(
+                &env,
                 TokensWithdrawnEvent {
                     stream_id,
                     recipient: recipient.clone(),
@@ -1395,8 +1401,8 @@ impl StreamContract {
             );
 
             if completed {
-                env.events().publish(
-                    (Symbol::new(&env, "stream_completed"), stream_id),
+                emit_stream_completed(
+                    &env,
                     StreamCompletedEvent {
                         stream_id,
                         recipient: recipient.clone(),
@@ -1440,8 +1446,8 @@ impl StreamContract {
         let config = load_config(&env)?;
         config.admin.require_auth();
 
-        env.events().publish(
-            (Symbol::new(&env, "contract_upgraded"),),
+        emit_contract_upgraded(
+            &env,
             ContractUpgradedEvent {
                 admin: config.admin,
                 old_wasm_hash: get_recorded_wasm_hash(&env),
@@ -1506,8 +1512,8 @@ impl StreamContract {
         save_config(&env, &config);
         save_contract_version(&env, target_version);
 
-        env.events().publish(
-            (Symbol::new(&env, "state_migrated"),),
+        emit_state_migrated(
+            &env,
             StateMigratedEvent {
                 admin: config.admin,
                 old_version: current_version,
@@ -1589,8 +1595,8 @@ impl StreamContract {
                 if fee > 0 {
                     let token_client = token::Client::new(env, token_address);
                     token_client.transfer(&env.current_contract_address(), &cfg.treasury, &fee);
-                    env.events().publish(
-                        (Symbol::new(env, "fee_collected"), stream_id),
+                    emit_fee_collected(
+                        env,
                         FeeCollectedEvent {
                             stream_id,
                             treasury: cfg.treasury,
