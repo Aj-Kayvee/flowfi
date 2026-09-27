@@ -4,6 +4,12 @@ import { INDEXER_STATE_ID } from '../lib/indexer-state.js';
 import { sorobanEventWorker } from '../workers/soroban-event-worker.js';
 import { setIndexerLedgers } from '../lib/metrics.js';
 import { withSpan } from '../lib/tracing.js';
+import {
+  getLatestCheckpoint,
+  listRecentCheckpoints,
+  verifyAndRecover,
+  type ReorgRecoveryResult,
+} from './checkpoint.service.js';
 import logger from '../logger.js';
 
 export interface IndexerStatus {
@@ -63,6 +69,65 @@ export async function replayFromLedger(fromLedger: number): Promise<void> {
  */
 export function publishIndexerLag(currentLedger: number, networkLedger: number): void {
   setIndexerLedgers(currentLedger, networkLedger);
+}
+
+// ─── Ledger reorg / fork recovery (issue #1468) ──────────────────────────────
+
+export interface ReorgStatus {
+  lastCheckpoint: {
+    ledgerSequence: number;
+    ledgerHash: string;
+    parentHash: string;
+    eventsCount: number;
+    stateRootHash: string | null;
+    isReverted: boolean;
+    processedAt: Date;
+  } | null;
+  recentRevertedLedgers: number[];
+}
+
+/** Current checkpoint health for /health and the admin observability surface. */
+export async function getReorgStatus(): Promise<ReorgStatus> {
+  const [latest, recent] = await Promise.all([
+    getLatestCheckpoint(true),
+    listRecentCheckpoints(50),
+  ]);
+
+  return {
+    lastCheckpoint: latest
+      ? {
+          ledgerSequence: latest.ledgerSequence,
+          ledgerHash: latest.ledgerHash,
+          parentHash: latest.parentHash,
+          eventsCount: latest.eventsCount,
+          stateRootHash: latest.stateRootHash,
+          isReverted: latest.isReverted,
+          processedAt: latest.processedAt,
+        }
+      : null,
+    recentRevertedLedgers: recent
+      .filter((checkpoint) => checkpoint.isReverted)
+      .map((checkpoint) => checkpoint.ledgerSequence),
+  };
+}
+
+/**
+ * Operator-triggered reorg recovery.
+ *
+ * Runs the same verification/rollback the poll loop performs, but under the
+ * worker mutex so it cannot race an in-flight batch, then kicks a poll so
+ * ingestion resumes from the recovered ledger immediately.
+ */
+export async function recoverFromReorg(): Promise<ReorgRecoveryResult> {
+  const result = await sorobanEventWorker.runExclusive(() =>
+    verifyAndRecover((sequence) => sorobanEventWorker.fetchLedgerHeader(sequence)),
+  );
+
+  if (result.detected) {
+    await sorobanEventWorker.triggerPoll();
+  }
+
+  return result;
 }
 
 // ─── Dead-letter quarantine ───────────────────────────────────────────────────
@@ -145,7 +210,8 @@ function eventTypeOf(event: rpc.Api.EventResponse): string {
   const topic0 = event.topic?.[0];
   if (!topic0) return 'unknown';
   try {
-    return topic0.sym().toString();
+    // SDK v17 exposes the symbol as a property (`.sym`), not a method.
+    return (topic0 as xdr.ScValSymbol).sym.toString();
   } catch {
     return 'unknown';
   }
