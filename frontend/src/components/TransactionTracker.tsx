@@ -46,10 +46,14 @@ interface TransactionTrackerProps {
   errorCode?: string;
   onRetry?: () => void;
   onCancel?: () => void;
+  /** Called once the indexer reflects the expected changes. */
+  onConfirmed?: () => void;
   streamId?: string;
   expectedChanges?: {
     depositedAmount?: string;
     withdrawnAmount?: string;
+    /** Confirmed once withdrawnAmount (base units) is strictly greater than this. */
+    withdrawnAmountAbove?: string;
     isActive?: boolean;
     isPaused?: boolean;
   };
@@ -81,6 +85,7 @@ export default function TransactionTracker({
   errorCode,
   onRetry,
   onCancel,
+  onConfirmed,
   streamId,
   expectedChanges,
 }: TransactionTrackerProps) {
@@ -130,6 +135,7 @@ export default function TransactionTracker({
 
         if (isConfirmed && !cancelled) {
           toast.success(`${ACTION_LABELS[action].past} successfully!`);
+          onConfirmed?.();
           return; // Stop polling, parent should transition to confirmed
         }
       } catch (err) {
@@ -148,6 +154,7 @@ export default function TransactionTracker({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onConfirmed identity must not restart polling
   }, [status, streamId, action, expectedChanges]);
 
   // Reset state when returning to idle
@@ -387,6 +394,9 @@ export function checkConfirmation(
   }
   if (expected.withdrawnAmount !== undefined) {
     if (current.withdrawnAmount !== expected.withdrawnAmount) return false;
+  }
+  if (expected.withdrawnAmountAbove !== undefined) {
+    if (BigInt(current.withdrawnAmount) <= BigInt(expected.withdrawnAmountAbove)) return false;
   }
   if (expected.isActive !== undefined) {
     if (current.isActive !== expected.isActive) return false;

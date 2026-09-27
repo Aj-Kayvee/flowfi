@@ -25,7 +25,7 @@ import {
 } from "@/lib/soroban";
 import { CancelConfirmModal } from "@/components/stream-creation/CancelConfirmModal";
 import type { BackendStreamEvent } from "@/lib/api-types";
-import { formatAmount, streamProgressPercent } from "@/utils/amount";
+import { formatAmount, streamProgressPercent, validateAmountInput } from "@/utils/amount";
 import { shortenPublicKey } from "@/lib/wallet";
 import { LiquidStreamVisualizer } from "@/components/LiquidStreamVisualizer";
 
@@ -221,8 +221,11 @@ export default function StreamDetailsContent({ streamId }: { streamId: string })
       toast.error("Please connect your wallet");
       return;
     }
-    if (!topUpAmount || parseFloat(topUpAmount) <= 0) {
-      toast.error("Please enter a valid amount");
+    // Same validation as TopUpModal: rejects over-precise input instead of
+    // letting toBaseUnits silently round it.
+    const amountError = validateAmountInput(topUpAmount, 7);
+    if (amountError) {
+      toast.error(amountError);
       return;
     }
     tracker.start();
