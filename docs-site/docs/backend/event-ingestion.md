@@ -32,4 +32,4 @@ sequenceDiagram
 ## Failures
 
 Decode or persistence failures land in the dead-letter table for triage —
-see [dead-letter triage](./dead-letter-triage.md).
+see [dead-letter triage](/backend/dead-letter-triage).

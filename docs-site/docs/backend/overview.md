@@ -12,14 +12,14 @@ indexer that mirrors chain state into PostgreSQL.
 1. **REST API** (`/api/v1/...`) — invoice/stream CRUD, withdraw proxy, user
    summaries, and (#1480) the analytics endpoints.
 2. **Event ingestion** — a worker tails Soroban events and writes them to
-   Postgres (see [event ingestion](./event-ingestion.md)).
+   Postgres (see [event ingestion](/backend/event-ingestion)).
 3. **Real-time fan-out** — SSE (and WebSocket) push indexed events to the
-   dashboard ([streams & SSE](./streams-sse.md)).
+   dashboard ([streams & SSE](/backend/streams-sse)).
 4. **Webhooks** — signed outbound deliveries with exponential-backoff retry
-   and a dead-letter queue ([webhooks](./webhooks.md),
-   [dead-letter triage](./dead-letter-triage.md)).
+   and a dead-letter queue ([webhooks](/backend/webhooks),
+   [dead-letter triage](/backend/dead-letter-triage)).
 5. **Analytics** — TimescaleDB-backed TVL/velocity
-   ([analytics](./analytics.md)).
+   ([analytics](/backend/analytics)).
 
 ## Layout
 

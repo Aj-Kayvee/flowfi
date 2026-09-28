@@ -33,4 +33,4 @@ function StreamCard({ streamId }: { streamId: bigint }) {
 ```
 
 `useClaimableAmount` polls by default; combine with the
-[SSE feed](../backend/streams-sse.md) for push updates.
+[SSE feed](/backend/streams-sse) for push updates.

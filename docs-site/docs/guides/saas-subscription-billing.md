@@ -11,7 +11,7 @@ while their subscription is active.
 
 1. **Subscribe** — the customer opens a 30-day linear stream to the
    merchant's address at the monthly rate. The merchant backend watches
-   `stream_created` events via [webhooks](../backend/webhooks.md) to
+   `stream_created` events via [webhooks](/backend/webhooks) to
    activate the account.
 2. **Active check** — account stays active while
    `get_projected_end_time > now + grace_period`. Expose this as a

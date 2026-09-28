@@ -38,5 +38,5 @@ await client.verifyAndUnlockMilestone({ caller: keypair, streamId, milestoneId: 
 ```
 
 All amounts are `bigint` stroops. Methods map 1:1 onto the contract
-entrypoints; see the [Rust reference](./contracts/soroban-reference.md) for
+entrypoints; see the [Rust reference](/contracts/soroban-reference) for
 the on-chain semantics and error codes.

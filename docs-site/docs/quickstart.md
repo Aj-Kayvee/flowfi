@@ -63,5 +63,5 @@ const events = new EventSource("https://api.flowfi.xyz/api/v1/events/stream");
 events.onmessage = (e) => console.log(JSON.parse(e.data));
 ```
 
-Next: [Core concepts](./core-concepts.md) or the [interactive
-playground](./api-reference/playground.md).
+Next: [Core concepts](/core-concepts) or the [interactive
+playground](/api-reference/playground).

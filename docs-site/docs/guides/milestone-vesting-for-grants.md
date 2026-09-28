@@ -43,5 +43,5 @@ await client.createConditionalStream({
 
 The committee's job shrinks to signing attestations (or running the oracle).
 Withdrawal uses the ordinary `withdraw` path — see
-[conditional streams](../contracts/conditional-streams.md) for the guarantee
+[conditional streams](/contracts/conditional-streams) for the guarantee
 set (freshness window, single-use attestation ids, escrow-equals-schedule).

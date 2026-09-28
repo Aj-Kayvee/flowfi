@@ -24,5 +24,5 @@ nobody queries or withdraws from is dead weight.
 
 Expired streams are recoverable by re-creating the entry from chain events
 (the indexer does exactly this; see
-[event ingestion](../backend/event-ingestion.md)). Amounts are recomputed
+[event ingestion](/backend/event-ingestion)). Amounts are recomputed
 deterministically from `start_time`, the schedule, and `withdrawn_amount`.

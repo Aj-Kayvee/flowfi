@@ -37,4 +37,4 @@ the normal step-unlock flow.
 - **Emergency guardian** — a second key that can pause if the admin key is
   compromised.
 - **Storage TTLs** — persistent entries are bumped on access so live streams
-  never expire; see [storage & TTLs](./contracts/storage-ttl.md).
+  never expire; see [storage & TTLs](/contracts/storage-ttl).

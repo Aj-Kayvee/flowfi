@@ -27,7 +27,7 @@ tokens by the second and withdraw when they choose — no claim windows.
    unaccrued remainder to the treasury automatically; the contributor keeps
    everything accrued up to cancellation.
 4. **Reporting** — the treasury dashboard reads
-   [`/analytics/tvl`](../backend/analytics.md) for total payroll committed
+   [`/analytics/tvl`](/backend/analytics) for total payroll committed
    and per-token velocity.
 
 ## Why streams beat batch payments
@@ -36,4 +36,4 @@ tokens by the second and withdraw when they choose — no claim windows.
 - The DAO keeps custody until accrual — a cancelled contract returns unused
   funds with no manual reconciliation.
 - Every payout is an on-chain proof, so accounting exports
-  ([`/api/v1/...` export](../backend/overview.md)) stay trivial.
+  ([`/api/v1/...` export](/backend/overview)) stay trivial.
