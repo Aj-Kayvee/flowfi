@@ -28,9 +28,6 @@ const config = {
           routeBasePath: "/",
           sidebarPath: "./sidebars.js",
           editUrl: "https://github.com/LabsCrypt/flowfi/edit/main/docs-site/",
-          // The protocol-overview doc serves the site root, so the navbar
-          // title link (and anything else pointing at "/") resolves.
-          homePageId: "intro",
         },
         theme: {
           customCss: "./src/css/custom.css",

@@ -1,5 +1,6 @@
 ---
 title: FlowFi protocol overview
+slug: /
 sidebar_position: 1
 ---
 
