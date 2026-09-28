@@ -80,4 +80,16 @@ pub enum StreamError {
     /// `close_stream` was called on a stream that is still active or still
     /// holds unwithdrawn funds, so its record cannot be pruned yet.
     StreamStillActive = 30,
+    /// Rate modification attempted on unsupported schedule type.
+    RateModificationUnsupported = 28,
+    /// New rate is invalid (e.g., zero or too small).
+    InvalidNewRate = 29,
+    /// Dispute operation attempted on non-disputable stream.
+    DisputeNotSupported = 30,
+    /// Stream does not have an active dispute.
+    NoActiveDispute = 31,
+    /// Caller is not the arbiter for this stream's dispute.
+    NotArbiter = 32,
+    /// Allowance-based stream operation failed.
+    AllowanceLocked = 33,
 }

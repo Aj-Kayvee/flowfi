@@ -11,12 +11,13 @@ pub const INSTANCE_BUMP_AMOUNT: u32 = 518_400;
 
 use crate::errors::StreamError;
 use crate::types::{
-    DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, VestingSchedule,
+    DataKey, DisputeStatus, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream,
+    VestingSchedule,
 };
 
 // ─── Version-Tolerant Decoding ────────────────────────────────────────────────
 
-/// Field counts of the current and pre-v2 record shapes.
+/// Field counts of the current and pre-v3 record shapes.
 ///
 /// A `#[contracttype]` struct is stored as a host `Map` with one entry per field,
 /// and decoding it walks the map positionally. The current shapes are described
@@ -24,6 +25,7 @@ use crate::types::{
 const CONFIG_FIELD_COUNT: u32 = 5;
 const LEGACY_CONFIG_FIELD_COUNT: u32 = 3;
 const STREAM_FIELD_COUNT: u32 = 14;
+const STREAM_FIELD_COUNT: u32 = 16;
 const LEGACY_STREAM_FIELD_COUNT: u32 = 12;
 
 /// Returns the number of fields in a stored record, or `None` if it is not a map.
@@ -142,6 +144,10 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
         // A stream with no schedule field predates step vesting: it is a
         // continuous drip by construction.
         schedule: VestingSchedule::Linear,
+        // New fields default to no arbiter, no dispute, and non-allowance-based.
+        arbiter: None,
+        dispute_status: DisputeStatus::None,
+        is_allowance_based: false,
     }
 }
 
@@ -246,4 +252,14 @@ pub fn save_recorded_wasm_hash(env: &Env, hash: &soroban_sdk::BytesN<32>) {
     env.storage()
         .instance()
         .set(&DataKey::ContractWasmHash, hash);
+}
+
+// ─── Stream Deletion ──────────────────────────────────────────────────────────
+
+/// Removes a stream record from persistent storage.
+///
+/// Used to prune fully settled streams and reclaim storage rent.
+pub fn remove_stream(env: &Env, stream_id: u64) {
+    let key = DataKey::Stream(stream_id);
+    env.storage().persistent().remove(&key);
 }
