@@ -11,19 +11,20 @@ pub const INSTANCE_BUMP_AMOUNT: u32 = 518_400;
 
 use crate::errors::StreamError;
 use crate::types::{
-    DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, VestingSchedule,
+    DataKey, DisputeStatus, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream,
+    VestingSchedule,
 };
 
 // ─── Version-Tolerant Decoding ────────────────────────────────────────────────
 
-/// Field counts of the current and pre-v2 record shapes.
+/// Field counts of the current and pre-v3 record shapes.
 ///
 /// A `#[contracttype]` struct is stored as a host `Map` with one entry per field,
 /// and decoding it walks the map positionally. The current shapes are described
 /// here only so the two can be told apart before a decode is attempted.
 const CONFIG_FIELD_COUNT: u32 = 5;
 const LEGACY_CONFIG_FIELD_COUNT: u32 = 3;
-const STREAM_FIELD_COUNT: u32 = 14;
+const STREAM_FIELD_COUNT: u32 = 17;
 const LEGACY_STREAM_FIELD_COUNT: u32 = 12;
 
 /// Returns the number of fields in a stored record, or `None` if it is not a map.
@@ -142,6 +143,10 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
         // A stream with no schedule field predates step vesting: it is a
         // continuous drip by construction.
         schedule: VestingSchedule::Linear,
+        // New fields default to no arbiter, no dispute, and non-allowance-based.
+        arbiter: None,
+        dispute_status: DisputeStatus::None,
+        is_allowance_based: false,
     }
 }
 

@@ -21,6 +21,33 @@ use types::{
     VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
 
+#[test]
+fn test_fee_is_deducted_and_stream_persists_on_create_and_top_up() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _admin) = create_token(&env);
+    let client = create_contract(&env);
+
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    mint(&env, &token, &sender, 2_000);
+    client.initialize(&Address::generate(&env), &treasury, &500);
+
+    let stream_id = client.create_stream(&sender, &recipient, &token, &1_000, &100);
+    assert_eq!(stream_id, 1);
+    assert_eq!(client.get_stream(&stream_id).unwrap().deposited_amount, 950);
+
+    client.top_up_stream(&sender, &stream_id, &500);
+    assert_eq!(
+        client.get_stream(&stream_id).unwrap().deposited_amount,
+        1_425
+    );
+
+    // 5% of 1_000 plus 5% of 500 is withheld to the treasury.
+    assert_eq!(token::Client::new(&env, &token).balance(&treasury), 75);
+}
+
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 /// Registers a Stellar asset contract and returns (token_address, token_admin).
@@ -99,6 +126,9 @@ fn test_datakey_stream_serializes_deterministically() {
         paused_at: None,
         status: StreamStatus::Active,
         schedule: VestingSchedule::Linear,
+        arbiter: None,
+        dispute_status: DisputeStatus::None,
+        is_allowance_based: false,
     };
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&key, &stream);
@@ -2298,6 +2328,9 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
             } else {
                 StreamStatus::Active
             },
+            arbiter: None,
+            dispute_status: DisputeStatus::None,
+            is_allowance_based: false,
         };
 
         let claimable = StreamContract::calculate_claimable(&stream, elapsed);
@@ -4510,7 +4543,7 @@ fn raw_stream_field_count(env: &Env, contract: &Address, stream_id: u64) -> u32 
 fn stream_record_is_current_shape(env: &Env, contract: &Address, stream_id: u64) -> bool {
     // `Stream` carries the `schedule` and `cliff_time` fields; `LegacyStream`
     // carries neither.
-    raw_stream_field_count(env, contract, stream_id) == 14
+    raw_stream_field_count(env, contract, stream_id) == 17
 }
 
 /// True when the raw record at `stream_id` decodes as the pre-v2 [`LegacyStream`].

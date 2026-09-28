@@ -270,3 +270,55 @@ pub struct StateMigratedEvent {
     /// Schema version after the migration.
     pub new_version: u32,
 }
+
+/// Emitted when a sender modifies a stream's rate (for #1320).
+///
+/// Topic: `("stream_rate_modified", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamRateModifiedEvent {
+    pub stream_id: u64,
+    pub sender: Address,
+    pub old_rate_per_second: i128,
+    pub new_rate_per_second: i128,
+    pub new_end_time: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a cancellation dispute is initiated (for #1319).
+///
+/// Topic: `("dispute_requested", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRequestedEvent {
+    pub stream_id: u64,
+    pub sender: Address,
+    pub arbiter: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is resolved (for #1319).
+///
+/// Topic: `("dispute_resolved", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeResolvedEvent {
+    pub stream_id: u64,
+    pub arbiter: Address,
+    pub approved: bool,
+    pub timestamp: u64,
+}
+
+/// Emitted when an allowance-based stream is created (for #1318).
+///
+/// Topic: `("allowance_stream_created", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowanceStreamCreatedEvent {
+    pub stream_id: u64,
+    pub sender: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub rate_per_second: i128,
+    pub start_time: u64,
+}
