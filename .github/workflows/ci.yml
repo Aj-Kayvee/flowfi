@@ -220,6 +220,11 @@ jobs:
         run: cargo test
         working-directory: contracts
 
+      - name: Run Contract Benchmarks
+        run: cargo test --release --test '*' -- --nocapture --test-threads=1
+        working-directory: contracts
+        continue-on-error: true
+
       - name: Cache cargo-tarpaulin
         id: tarpaulin-cache
         uses: actions/cache@v4
