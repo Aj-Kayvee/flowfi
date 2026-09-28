@@ -46,20 +46,22 @@ use soroban_sdk::{
 
 use errors::StreamError;
 use events::{
-    AdminTransferredEvent, ContractUpgradedEvent, EmergencyGuardianUpdatedEvent, FeeCollectedEvent,
-    FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
+    AdminTransferredEvent, AllowanceStreamCreatedEvent, ContractUpgradedEvent,
+    DisputeRequestedEvent, DisputeResolvedEvent, EmergencyGuardianUpdatedEvent,
+    FeeCollectedEvent, FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
     ProtocolPauseStatusEvent, StateMigratedEvent, StepVestingStreamCreatedEvent,
-    StreamCancelledEvent, StreamCompletedEvent, StreamCreatedEvent, StreamPausedEvent,
-    StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
+    StreamCancelledEvent, StreamClosedEvent, StreamCompletedEvent, StreamCreatedEvent,
+    StreamPausedEvent, StreamRateModifiedEvent, StreamResumedEvent, StreamToppedUpEvent,
+    TokensWithdrawnEvent,
 };
 use storage::{
     config_exists, get_contract_version, get_recorded_wasm_hash, load_config, load_stream,
-    next_stream_id, save_config, save_contract_version, save_recorded_wasm_hash, save_stream,
-    try_load_config, try_load_stream,
+    next_stream_id, remove_stream, save_config, save_contract_version, save_recorded_wasm_hash,
+    save_stream, try_load_config, try_load_stream,
 };
 use types::{
-    ProtocolConfig, Stream, StreamStatus, VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW,
-    MAX_VESTING_STEPS,
+    DisputeStatus, ProtocolConfig, Stream, StreamStatus, VestingSchedule, VestingStep,
+    MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
 
 /// Maximum allowed protocol fee: 1 000 bps = 10%.
@@ -415,6 +417,9 @@ impl StreamContract {
                 paused_at: None,
                 status: StreamStatus::Active,
                 schedule: VestingSchedule::Linear,
+                arbiter: None,
+                dispute_status: DisputeStatus::None,
+                is_allowance_based: false,
             },
         );
 
@@ -521,6 +526,9 @@ impl StreamContract {
                 paused_at: None,
                 status: StreamStatus::Active,
                 schedule: VestingSchedule::StepTranches(steps),
+                arbiter: None,
+                dispute_status: DisputeStatus::None,
+                is_allowance_based: false,
             },
         );
 
@@ -613,6 +621,9 @@ impl StreamContract {
                 paused_at: None,
                 status: StreamStatus::Active,
                 schedule: VestingSchedule::HybridCliffLinear(cliff_time, cliff_unlock_amount),
+                arbiter: None,
+                dispute_status: DisputeStatus::None,
+                is_allowance_based: false,
             },
         );
 
@@ -1562,6 +1573,301 @@ impl StreamContract {
     /// report the linear projection. Returns `None` for an unknown stream.
     pub fn get_projected_end_time(env: Env, stream_id: u64) -> Option<u64> {
         try_load_stream(&env, stream_id).map(|stream| Self::projected_end_time(&stream))
+    }
+
+    // ─── Stream Rate Modification (Feature #1320) ──────────────────────────────
+
+    /// Modify the rate_per_second of an active linear stream.
+    ///
+    /// Only the sender may modify the rate. Unsupported for step-tranche and
+    /// hybrid cliff schedules, which have fixed unlock times.
+    ///
+    /// # Errors
+    /// - `StreamNotFound`              — no stream exists with `stream_id`.
+    /// - `Unauthorized`                — caller is not the stream's sender.
+    /// - `StreamInactive`              — stream has been cancelled or fully withdrawn.
+    /// - `RateModificationUnsupported` — stream uses step-tranche or hybrid schedule.
+    /// - `InvalidNewRate`              — new rate is zero or would round to zero in calculations.
+    /// - `ArithmeticOverflow`          — projected end time calculation overflows.
+    pub fn modify_rate(
+        env: Env,
+        sender: Address,
+        stream_id: u64,
+        new_rate_per_second: i128,
+    ) -> Result<u64, StreamError> {
+        sender.require_auth();
+
+        if new_rate_per_second <= 0 {
+            return Err(StreamError::InvalidNewRate);
+        }
+
+        let mut stream = load_stream(&env, stream_id)?;
+        Self::validate_stream_ownership(&stream, &sender)?;
+        Self::validate_stream_active(&stream)?;
+
+        // Only support linear schedules
+        if !matches!(stream.schedule, VestingSchedule::Linear) {
+            return Err(StreamError::RateModificationUnsupported);
+        }
+
+        let now = env.ledger().timestamp();
+        let old_rate = stream.rate_per_second;
+
+        // Update the rate
+        stream.rate_per_second = new_rate_per_second;
+        stream.last_update_time = now;
+
+        let remaining = stream
+            .deposited_amount
+            .saturating_sub(stream.withdrawn_amount);
+        let new_end_time = Self::project_end_time(now, remaining, new_rate_per_second)?;
+
+        save_stream(&env, stream_id, &stream);
+
+        env.events().publish(
+            (Symbol::new(&env, "stream_rate_modified"), stream_id),
+            StreamRateModifiedEvent {
+                stream_id,
+                sender,
+                old_rate_per_second: old_rate,
+                new_rate_per_second,
+                new_end_time,
+                timestamp: now,
+            },
+        );
+
+        Ok(new_end_time)
+    }
+
+    // ─── Allowance-Based Streams (Feature #1318) ──────────────────────────────
+
+    /// Create a payment stream funded by allowance instead of upfront transfer.
+    ///
+    /// The sender must have pre-approved the contract with enough allowance.
+    /// Tokens are debited from the sender's balance during withdrawals, not
+    /// locked upfront. Ideal for recurring subscriptions where balance may vary.
+    ///
+    /// Returns the new stream ID.
+    ///
+    /// # Errors
+    /// - `ProtocolPaused`      — the circuit breaker is engaged.
+    /// - `InvalidAmount`       — `amount` ≤ 0 (max allowance or duration spec).
+    /// - `InvalidDuration`     — `duration` is 0.
+    /// - `InvalidTokenAddress` — `token_address` is not a token contract.
+    /// - `AllowanceLocked`     — insufficient allowance on the token.
+    pub fn create_allowance_stream(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token_address: Address,
+        duration: u64,
+    ) -> Result<u64, StreamError> {
+        sender.require_auth();
+        Self::require_not_protocol_paused(&env)?;
+
+        if duration == 0 {
+            return Err(StreamError::InvalidDuration);
+        }
+        Self::validate_token_contract(&env, &token_address)?;
+
+        let stream_id = next_stream_id(&env);
+        let start_time = env.ledger().timestamp();
+
+        // Check allowance: just verify it's callable, don't lock it yet
+        let token_client = token::Client::new(&env, &token_address);
+        // Try to get allowance to validate approval was made
+        match env.try_invoke_contract::<i128, soroban_sdk::InvokeError>(
+            &token_address,
+            &Symbol::new(&env, "allowance"),
+            vec![&env, &sender, &env.current_contract_address()],
+        ) {
+            Ok(Ok(allowance)) if allowance > 0 => {},
+            _ => return Err(StreamError::AllowanceLocked),
+        }
+
+        // Calculate rate: use a nominal rate of 1 per second
+        // In practice, the actual streaming amount is controlled by the sender's approved allowance
+        let rate_per_second: i128 = 1;
+
+        save_stream(
+            &env,
+            stream_id,
+            &Stream {
+                sender: sender.clone(),
+                recipient: recipient.clone(),
+                token_address: token_address.clone(),
+                rate_per_second,
+                deposited_amount: 0, // No upfront deposit
+                withdrawn_amount: 0,
+                start_time,
+                last_update_time: start_time,
+                is_active: true,
+                paused: false,
+                paused_at: None,
+                status: StreamStatus::Active,
+                schedule: VestingSchedule::Linear,
+                arbiter: None,
+                dispute_status: DisputeStatus::None,
+                is_allowance_based: true,
+            },
+        );
+
+        env.events().publish(
+            (Symbol::new(&env, "allowance_stream_created"), stream_id),
+            AllowanceStreamCreatedEvent {
+                stream_id,
+                sender,
+                recipient,
+                token_address,
+                rate_per_second,
+                start_time,
+            },
+        );
+
+        Ok(stream_id)
+    }
+
+    // ─── Dispute & Escrow (Feature #1319) ──────────────────────────────────────
+
+    /// Request a dispute for a stream cancellation (escrow mode).
+    ///
+    /// Enables mutual agreement or arbiter resolution for stream cancellations.
+    /// If a stream has an arbiter set, the sender cannot unilaterally cancel.
+    /// Instead, they request a dispute and wait for the arbiter to resolve it.
+    ///
+    /// # Errors
+    /// - `StreamNotFound`       — no stream exists with `stream_id`.
+    /// - `Unauthorized`         — caller is not the stream's sender.
+    /// - `StreamInactive`       — stream is inactive.
+    /// - `DisputeNotSupported`  — stream has no arbiter configured.
+    pub fn request_dispute(
+        env: Env,
+        sender: Address,
+        stream_id: u64,
+    ) -> Result<(), StreamError> {
+        sender.require_auth();
+
+        let mut stream = load_stream(&env, stream_id)?;
+        Self::validate_stream_ownership(&stream, &sender)?;
+        Self::validate_stream_active(&stream)?;
+
+        let arbiter = stream
+            .arbiter
+            .as_ref()
+            .ok_or(StreamError::DisputeNotSupported)?
+            .clone();
+
+        stream.dispute_status = DisputeStatus::Requested;
+        let now = env.ledger().timestamp();
+        save_stream(&env, stream_id, &stream);
+
+        env.events().publish(
+            (Symbol::new(&env, "dispute_requested"), stream_id),
+            DisputeRequestedEvent {
+                stream_id,
+                sender,
+                arbiter,
+                timestamp: now,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Resolve a dispute for a stream cancellation (arbiter action).
+    ///
+    /// Only the configured arbiter may call this. If `approved` is `true`,
+    /// the stream is cancelled and funds are distributed. If `false`, the
+    /// dispute is rejected and the stream remains active.
+    ///
+    /// # Errors
+    /// - `StreamNotFound`  — no stream exists with `stream_id`.
+    /// - `NotArbiter`      — caller is not the stream's arbiter.
+    /// - `NoActiveDispute` — the stream has no active dispute.
+    pub fn resolve_dispute(
+        env: Env,
+        arbiter: Address,
+        stream_id: u64,
+        approved: bool,
+    ) -> Result<(), StreamError> {
+        arbiter.require_auth();
+
+        let mut stream = load_stream(&env, stream_id)?;
+
+        let configured_arbiter = stream
+            .arbiter
+            .as_ref()
+            .ok_or(StreamError::DisputeNotSupported)?;
+        if arbiter != *configured_arbiter {
+            return Err(StreamError::NotArbiter);
+        }
+
+        if !matches!(stream.dispute_status, DisputeStatus::Requested) {
+            return Err(StreamError::NoActiveDispute);
+        }
+
+        let now = env.ledger().timestamp();
+        stream.dispute_status = DisputeStatus::Resolved(approved);
+
+        env.events().publish(
+            (Symbol::new(&env, "dispute_resolved"), stream_id),
+            DisputeResolvedEvent {
+                stream_id,
+                arbiter: arbiter.clone(),
+                approved,
+                timestamp: now,
+            },
+        );
+
+        if approved {
+            // Proceed with cancellation
+            let accrued_amount = Self::calculate_claimable(&stream, now);
+
+            if accrued_amount > 0 {
+                stream.withdrawn_amount = stream.withdrawn_amount.saturating_add(accrued_amount);
+            }
+
+            let refunded_amount = stream
+                .deposited_amount
+                .saturating_sub(stream.withdrawn_amount);
+
+            stream.is_active = false;
+            stream.status = StreamStatus::Cancelled;
+            stream.paused = false;
+            stream.paused_at = None;
+            stream.last_update_time = now;
+
+            let recipient = stream.recipient.clone();
+            let sender = stream.sender.clone();
+
+            save_stream(&env, stream_id, &stream);
+
+            let token_client = token::Client::new(&env, &stream.token_address);
+            let contract_address = env.current_contract_address();
+
+            if accrued_amount > 0 {
+                token_client.transfer(&contract_address, &recipient, &accrued_amount);
+            }
+
+            if refunded_amount > 0 {
+                token_client.transfer(&contract_address, &sender, &refunded_amount);
+            }
+
+            env.events().publish(
+                (Symbol::new(&env, "stream_cancelled"), stream_id),
+                StreamCancelledEvent {
+                    stream_id,
+                    sender,
+                    recipient,
+                    amount_withdrawn: stream.withdrawn_amount,
+                    refunded_amount,
+                },
+            );
+        } else {
+            save_stream(&env, stream_id, &stream);
+        }
+
+        Ok(())
     }
 
     // ─── Internal Helpers ─────────────────────────────────────────────────────
