@@ -1,4 +1,4 @@
-﻿use soroban_sdk::{Env, Map, Symbol, TryFromVal, Val};
+use soroban_sdk::{Env, Map, Symbol, TryFromVal, Val};
 
 /// Minimum ledgers remaining before a persistent entry is renewed.
 pub const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
@@ -243,14 +243,4 @@ pub fn save_recorded_wasm_hash(env: &Env, hash: &soroban_sdk::BytesN<32>) {
     env.storage()
         .instance()
         .set(&DataKey::ContractWasmHash, hash);
-}
-
-// ─── Stream Deletion ──────────────────────────────────────────────────────────
-
-/// Removes a stream record from persistent storage.
-///
-/// Used to prune fully settled streams and reclaim storage rent.
-pub fn remove_stream(env: &Env, stream_id: u64) {
-    let key = DataKey::Stream(stream_id);
-    env.storage().persistent().remove(&key);
 }

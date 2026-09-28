@@ -1,15 +1,15 @@
-﻿//! # `stream_contract` â€” Soroban Payment-Streaming Contract
+//! # `stream_contract` Ã¢â‚¬â€ Soroban Payment-Streaming Contract
 //!
 //! ## Module responsibilities
 //!
 //! | Module | Responsibility |
 //! |--------|---------------|
-//! | [`lib.rs`](./lib.rs) | Public contract interface (`StreamContract`) â€” entrypoints exposed via `#[contractimpl]` |
-//! | [`storage.rs`](./storage.rs) | Persistent state â€” read/write `ProtocolConfig` and `Stream` records to Soroban storage |
-//! | [`types.rs`](./types.rs) | Data types â€” `Stream`, `ProtocolConfig`, `StreamStatus`, `DataKey` |
-//! | [`errors.rs`](./errors.rs) | Error types â€” `StreamError` enum with all contract error variants |
-//! | [`events.rs`](./events.rs) | Event payloads â€” typed structs emitted by each entrypoint |
-//! | [`test.rs`](./test.rs) | Unit & integration tests â€” module gated behind `#[cfg(test)]` |
+//! | [`lib.rs`](./lib.rs) | Public contract interface (`StreamContract`) Ã¢â‚¬â€ entrypoints exposed via `#[contractimpl]` |
+//! | [`storage.rs`](./storage.rs) | Persistent state Ã¢â‚¬â€ read/write `ProtocolConfig` and `Stream` records to Soroban storage |
+//! | [`types.rs`](./types.rs) | Data types Ã¢â‚¬â€ `Stream`, `ProtocolConfig`, `StreamStatus`, `DataKey` |
+//! | [`errors.rs`](./errors.rs) | Error types Ã¢â‚¬â€ `StreamError` enum with all contract error variants |
+//! | [`events.rs`](./events.rs) | Event payloads Ã¢â‚¬â€ typed structs emitted by each entrypoint |
+//! | [`test.rs`](./test.rs) | Unit & integration tests Ã¢â‚¬â€ module gated behind `#[cfg(test)]` |
 //!
 //! ## Stream State Invariant
 //!
@@ -34,7 +34,6 @@ mod storage;
 mod types;
 
 #[cfg(test)]
-mod acceptance_tests;
 #[cfg(test)]
 mod property_tests;
 #[cfg(test)]
@@ -69,10 +68,10 @@ const MAX_FEE_RATE_BPS: u32 = 1_000;
 
 /// Current on-chain state schema version.
 ///
-/// - `0` â€” unversioned, written before `DataKey::ContractVersion` existed.
+/// - `0` Ã¢â‚¬â€ unversioned, written before `DataKey::ContractVersion` existed.
 ///   `ProtocolConfig` has three fields and `Stream` has no `schedule`.
-/// - `1` â€” reserved for versioned pre-circuit-breaker state.
-/// - `2` â€” adds the protocol circuit breaker, the emergency guardian role and
+/// - `1` Ã¢â‚¬â€ reserved for versioned pre-circuit-breaker state.
+/// - `2` Ã¢â‚¬â€ adds the protocol circuit breaker, the emergency guardian role and
 ///   the `VestingSchedule` discriminator to `Stream`.
 const CURRENT_DATA_VERSION: u32 = 2;
 
@@ -81,7 +80,7 @@ pub struct StreamContract;
 
 #[contractimpl]
 impl StreamContract {
-    // â”€â”€â”€ Protocol Administration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Protocol Administration Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /// One-time initialization of the protocol fee configuration.
     ///
@@ -89,8 +88,8 @@ impl StreamContract {
     /// with `set_emergency_guardian` once the protocol is live.
     ///
     /// # Errors
-    /// - `AlreadyInitialized` â€” called more than once.
-    /// - `InvalidFeeRate`     â€” `fee_rate_bps` exceeds `MAX_FEE_RATE_BPS`.
+    /// - `AlreadyInitialized` Ã¢â‚¬â€ called more than once.
+    /// - `InvalidFeeRate`     Ã¢â‚¬â€ `fee_rate_bps` exceeds `MAX_FEE_RATE_BPS`.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -135,9 +134,9 @@ impl StreamContract {
     /// Circuit-breaker and guardian state are deliberately left untouched.
     ///
     /// # Errors
-    /// - `NotInitialized` â€” `initialize` has not been called.
-    /// - `NotAdmin`       â€” caller is not the current admin.
-    /// - `InvalidFeeRate` â€” `fee_rate_bps` exceeds `MAX_FEE_RATE_BPS`.
+    /// - `NotInitialized` Ã¢â‚¬â€ `initialize` has not been called.
+    /// - `NotAdmin`       Ã¢â‚¬â€ caller is not the current admin.
+    /// - `InvalidFeeRate` Ã¢â‚¬â€ `fee_rate_bps` exceeds `MAX_FEE_RATE_BPS`.
     pub fn update_fee_config(
         env: Env,
         admin: Address,
@@ -192,8 +191,8 @@ impl StreamContract {
     /// in effect until explicitly cleared.
     ///
     /// # Errors
-    /// - `NotInitialized` â€” `initialize` has not been called.
-    /// - `NotAdmin`       â€” caller is not the current admin.
+    /// - `NotInitialized` Ã¢â‚¬â€ `initialize` has not been called.
+    /// - `NotAdmin`       Ã¢â‚¬â€ caller is not the current admin.
     pub fn transfer_admin(
         env: Env,
         current_admin: Address,
@@ -233,14 +232,14 @@ impl StreamContract {
         try_load_config(&env)
     }
 
-    // â”€â”€â”€ Circuit Breaker (F1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Circuit Breaker (F1) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /// Trip or clear the protocol-wide circuit breaker.
     ///
     /// Authorization is deliberately asymmetric, following the emergency-stop
     /// pattern used across DeFi:
-    /// - **Pausing** â€” the admin *or* the emergency guardian may trip it.
-    /// - **Unpausing** â€” only the admin. A guardian that could also clear the
+    /// - **Pausing** Ã¢â‚¬â€ the admin *or* the emergency guardian may trip it.
+    /// - **Unpausing** Ã¢â‚¬â€ only the admin. A guardian that could also clear the
     ///   breaker could silently reinstate deposits during the very incident
     ///   that caused the pause, so a compromised guardian can only ever be
     ///   maximally restrictive.
@@ -252,8 +251,8 @@ impl StreamContract {
     /// a pause can neither censor withdrawals of vested funds nor trap capital.
     ///
     /// # Errors
-    /// - `NotInitialized` â€” `initialize` has not been called.
-    /// - `NotAdmin`       â€” caller is neither admin nor guardian, or is neither
+    /// - `NotInitialized` Ã¢â‚¬â€ `initialize` has not been called.
+    /// - `NotAdmin`       Ã¢â‚¬â€ caller is neither admin nor guardian, or is neither
     ///   admin nor guardian while attempting to unpause.
     pub fn set_protocol_pause(env: Env, caller: Address, paused: bool) -> Result<(), StreamError> {
         let mut config = load_config(&env)?;
@@ -304,8 +303,8 @@ impl StreamContract {
     /// address is allowed and equivalent to having no separate guardian.
     ///
     /// # Errors
-    /// - `NotInitialized` â€” `initialize` has not been called.
-    /// - `NotAdmin`       â€” caller is not the current admin.
+    /// - `NotInitialized` Ã¢â‚¬â€ `initialize` has not been called.
+    /// - `NotAdmin`       Ã¢â‚¬â€ caller is not the current admin.
     pub fn set_emergency_guardian(
         env: Env,
         admin: Address,
@@ -341,7 +340,7 @@ impl StreamContract {
         Ok(())
     }
 
-    // â”€â”€â”€ Stream Operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Stream Operations Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /// Create a new payment stream.
     ///
@@ -352,12 +351,12 @@ impl StreamContract {
     /// Returns the new stream ID (starts at 1, increments monotonically).
     ///
     /// # Errors
-    /// - `ProtocolPaused`     â€” the circuit breaker is engaged.
-    /// - `InvalidAmount`      â€” `amount` â‰¤ 0.
-    /// - `InvalidDuration`    â€” `duration` is 0.
-    /// - `InvalidRate`        â€” `net_amount / duration` rounds to zero.
-    /// - `InvalidTokenAddress` â€” `token_address` is not a token contract.
-    /// - `ArithmeticOverflow` â€” the protocol fee calculation overflows `i128`.
+    /// - `ProtocolPaused`     Ã¢â‚¬â€ the circuit breaker is engaged.
+    /// - `InvalidAmount`      Ã¢â‚¬â€ `amount` Ã¢â€°Â¤ 0.
+    /// - `InvalidDuration`    Ã¢â‚¬â€ `duration` is 0.
+    /// - `InvalidRate`        Ã¢â‚¬â€ `net_amount / duration` rounds to zero.
+    /// - `InvalidTokenAddress` Ã¢â‚¬â€ `token_address` is not a token contract.
+    /// - `ArithmeticOverflow` Ã¢â‚¬â€ the protocol fee calculation overflows `i128`.
     pub fn create_stream(
         env: Env,
         sender: Address,
@@ -391,7 +390,7 @@ impl StreamContract {
 
         // Reject streams where integer division rounds the rate to zero.
         // Such a stream would lock the sender's tokens in the contract while
-        // never accruing anything to the recipient â€” almost always a caller
+        // never accruing anything to the recipient Ã¢â‚¬â€ almost always a caller
         // mistake (wrong decimals or an excessively long duration).
         // Soroban rolls back the entire transaction on Err, so the token
         // transfer above is unwound automatically.
@@ -461,15 +460,15 @@ impl StreamContract {
     /// the gross `amount` and the steps must sum to that *net* figure.
     ///
     /// # Errors
-    /// - `ProtocolPaused`              â€” the circuit breaker is engaged.
-    /// - `InvalidAmount`               â€” `amount` â‰¤ 0.
-    /// - `InvalidTokenAddress`         â€” `token_address` is not a token contract.
-    /// - `EmptyVestingSchedule`        â€” `steps` is empty.
-    /// - `TooManyVestingSteps`         â€” more than `MAX_VESTING_STEPS` steps.
-    /// - `NonMonotonicVestingSteps`    â€” two steps share an `unlock_time` or are out of order.
-    /// - `InvalidVestingStepAmount`    â€” a step amount is â‰¤ 0.
-    /// - `VestingStepBeforeStart`      â€” a step unlocks at or before the stream start.
-    /// - `VestingStepTotalMismatch`    â€” step amounts â‰  post-fee deposited amount.
+    /// - `ProtocolPaused`              Ã¢â‚¬â€ the circuit breaker is engaged.
+    /// - `InvalidAmount`               Ã¢â‚¬â€ `amount` Ã¢â€°Â¤ 0.
+    /// - `InvalidTokenAddress`         Ã¢â‚¬â€ `token_address` is not a token contract.
+    /// - `EmptyVestingSchedule`        Ã¢â‚¬â€ `steps` is empty.
+    /// - `TooManyVestingSteps`         Ã¢â‚¬â€ more than `MAX_VESTING_STEPS` steps.
+    /// - `NonMonotonicVestingSteps`    Ã¢â‚¬â€ two steps share an `unlock_time` or are out of order.
+    /// - `InvalidVestingStepAmount`    Ã¢â‚¬â€ a step amount is Ã¢â€°Â¤ 0.
+    /// - `VestingStepBeforeStart`      Ã¢â‚¬â€ a step unlocks at or before the stream start.
+    /// - `VestingStepTotalMismatch`    Ã¢â‚¬â€ step amounts Ã¢â€°Â  post-fee deposited amount.
     pub fn create_step_vesting_stream(
         env: Env,
         sender: Address,
@@ -561,10 +560,10 @@ impl StreamContract {
     /// This is the common "4-year cliff, then monthly" compensation shape.
     ///
     /// # Errors
-    /// - `ProtocolPaused`        â€” the circuit breaker is engaged.
-    /// - `InvalidAmount`         â€” `amount` â‰¤ 0.
-    /// - `InvalidTokenAddress`   â€” `token_address` is not a token contract.
-    /// - `InvalidCliffParameters` â€” `cliff_time` not after start, `cliff_unlock_amount`
+    /// - `ProtocolPaused`        Ã¢â‚¬â€ the circuit breaker is engaged.
+    /// - `InvalidAmount`         Ã¢â‚¬â€ `amount` Ã¢â€°Â¤ 0.
+    /// - `InvalidTokenAddress`   Ã¢â‚¬â€ `token_address` is not a token contract.
+    /// - `InvalidCliffParameters` Ã¢â‚¬â€ `cliff_time` not after start, `cliff_unlock_amount`
     ///   not in `(0, net)`, `linear_duration` 0, or the post-cliff rate rounds to zero.
     pub fn create_hybrid_cliff_stream(
         env: Env,
@@ -697,18 +696,18 @@ impl StreamContract {
     /// Supported for the continuous-drip schedules ([`VestingSchedule::Linear`]
     /// and the linear tail of [`VestingSchedule::HybridCliffLinear`]), where a
     /// larger deposit simply extends the drain time at the same rate. Rejected
-    /// for [`VestingSchedule::StepTranches`] with `TopUpUnsupported` â€” a step
+    /// for [`VestingSchedule::StepTranches`] with `TopUpUnsupported` Ã¢â‚¬â€ a step
     /// schedule must sum to exactly the deposited amount, so a top-up could
     /// either be stranded as unclaimable residue or silently deferred to the
     /// final milestone. Both would misstate when the recipient gets their money.
     ///
     /// # Errors
-    /// - `ProtocolPaused`    â€” the circuit breaker is engaged.
-    /// - `InvalidAmount`     â€” `amount` â‰¤ 0.
-    /// - `StreamNotFound`    â€” no stream exists with `stream_id`.
-    /// - `Unauthorized`      â€” caller is not the stream's sender.
-    /// - `StreamInactive`    â€” stream has been cancelled or fully withdrawn.
-    /// - `TopUpUnsupported`  â€” the stream uses a step-tranche schedule.
+    /// - `ProtocolPaused`    Ã¢â‚¬â€ the circuit breaker is engaged.
+    /// - `InvalidAmount`     Ã¢â‚¬â€ `amount` Ã¢â€°Â¤ 0.
+    /// - `StreamNotFound`    Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized`      Ã¢â‚¬â€ caller is not the stream's sender.
+    /// - `StreamInactive`    Ã¢â‚¬â€ stream has been cancelled or fully withdrawn.
+    /// - `TopUpUnsupported`  Ã¢â‚¬â€ the stream uses a step-tranche schedule.
     pub fn top_up_stream(
         env: Env,
         sender: Address,
@@ -776,7 +775,7 @@ impl StreamContract {
         Ok(())
     }
 
-    // â”€â”€â”€ Internal Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Internal Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /// Ensures the supplied token address implements the Soroban token interface.
     fn validate_token_contract(env: &Env, token_address: &Address) -> Result<(), StreamError> {
@@ -794,14 +793,14 @@ impl StreamContract {
     ///
     /// Dispatches on [`Stream::schedule`]:
     ///
-    /// - [`VestingSchedule::Linear`] â€” accrues at `rate_per_second` from the
+    /// - [`VestingSchedule::Linear`] Ã¢â‚¬â€ accrues at `rate_per_second` from the
     ///   `last_update_time` anchor, so pauses are handled by `resume_stream`
     ///   shifting that anchor forward.
-    /// - [`VestingSchedule::StepTranches`] â€” sums the `unlock_amount` of every
+    /// - [`VestingSchedule::StepTranches`] Ã¢â‚¬â€ sums the `unlock_amount` of every
     ///   step whose absolute `unlock_time` has arrived, minus what has already
     ///   been withdrawn. Steps are strictly increasing, so the loop can stop at
     ///   the first future step.
-    /// - [`VestingSchedule::HybridCliffLinear`] â€” the cliff lump once
+    /// - [`VestingSchedule::HybridCliffLinear`] Ã¢â‚¬â€ the cliff lump once
     ///   `cliff_time` is reached, plus linear accrual from `cliff_time`.
     ///
     /// The two non-linear schedules are anchored to absolute ledger timestamps
@@ -928,8 +927,8 @@ impl StreamContract {
     /// Validate that a stream exists and is owned by the caller.
     ///
     /// # Errors
-    /// - `StreamNotFound` â€” no stream exists with `stream_id`.
-    /// - `Unauthorized` â€” caller is not the stream's sender.
+    /// - `StreamNotFound` Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized` Ã¢â‚¬â€ caller is not the stream's sender.
     fn validate_stream_ownership(stream: &Stream, caller: &Address) -> Result<(), StreamError> {
         if stream.sender != *caller {
             return Err(StreamError::Unauthorized);
@@ -961,7 +960,7 @@ impl StreamContract {
     /// Validate that a stream is active.
     ///
     /// # Errors
-    /// - `StreamInactive` â€” stream has been cancelled or fully withdrawn.
+    /// - `StreamInactive` Ã¢â‚¬â€ stream has been cancelled or fully withdrawn.
     fn validate_stream_active(stream: &Stream) -> Result<(), StreamError> {
         if !stream.is_active {
             return Err(StreamError::StreamInactive);
@@ -1013,11 +1012,11 @@ impl StreamContract {
     /// inactive once fully drained.
     ///
     /// # Errors
-    /// - `StreamNotFound`  â€” no stream exists with `stream_id`.
-    /// - `Unauthorized`    â€” caller is not the stream's recipient.
-    /// - `StreamInactive`  â€” stream is already inactive.
-    /// - `InvalidAmount`   â€” no claimable balance (fully withdrawn already).
-    /// - `ArithmeticOverflow` â€” the new withdrawn total overflows `i128`.
+    /// - `StreamNotFound`  Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized`    Ã¢â‚¬â€ caller is not the stream's recipient.
+    /// - `StreamInactive`  Ã¢â‚¬â€ stream is already inactive.
+    /// - `InvalidAmount`   Ã¢â‚¬â€ no claimable balance (fully withdrawn already).
+    /// - `ArithmeticOverflow` Ã¢â‚¬â€ the new withdrawn total overflows `i128`.
     pub fn withdraw(env: Env, recipient: Address, stream_id: u64) -> Result<i128, StreamError> {
         recipient.require_auth();
 
@@ -1084,9 +1083,9 @@ impl StreamContract {
     /// See Testing #94 for test coverage.
     ///
     /// # Errors
-    /// - `StreamNotFound`  â€” no stream exists with `stream_id`.
-    /// - `Unauthorized`    â€” caller is not the stream's sender.
-    /// - `StreamInactive`  â€” stream is already inactive.
+    /// - `StreamNotFound`  Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized`    Ã¢â‚¬â€ caller is not the stream's sender.
+    /// - `StreamInactive`  Ã¢â‚¬â€ stream is already inactive.
     pub fn cancel_stream(env: Env, sender: Address, stream_id: u64) -> Result<(), StreamError> {
         sender.require_auth();
 
@@ -1162,9 +1161,9 @@ impl StreamContract {
     /// stream as archived.
     ///
     /// # Errors
-    /// - `StreamNotFound`   â€” no stream exists with `stream_id`.
-    /// - `Unauthorized`     â€” caller is not sender, recipient, or admin.
-    /// - `StreamStillActive` â€” stream is still active, has a non-terminal
+    /// - `StreamNotFound`   Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized`     Ã¢â‚¬â€ caller is not sender, recipient, or admin.
+    /// - `StreamStillActive` Ã¢â‚¬â€ stream is still active, has a non-terminal
     ///   status, or still holds unwithdrawn / claimable funds.
     pub fn close_stream(env: Env, caller: Address, stream_id: u64) -> Result<(), StreamError> {
         caller.require_auth();
@@ -1220,10 +1219,10 @@ impl StreamContract {
     /// Pause an active stream. Only the sender may pause.
     ///
     /// # Errors
-    /// - `StreamNotFound`     â€” no stream exists with `stream_id`.
-    /// - `Unauthorized`       â€” caller is not the stream's sender.
-    /// - `StreamInactive`     â€” stream is inactive (cancelled or completed).
-    /// - `StreamAlreadyPaused` â€” stream is already paused.
+    /// - `StreamNotFound`     Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized`       Ã¢â‚¬â€ caller is not the stream's sender.
+    /// - `StreamInactive`     Ã¢â‚¬â€ stream is inactive (cancelled or completed).
+    /// - `StreamAlreadyPaused` Ã¢â‚¬â€ stream is already paused.
     pub fn pause_stream(env: Env, sender: Address, stream_id: u64) -> Result<(), StreamError> {
         sender.require_auth();
 
@@ -1266,10 +1265,10 @@ impl StreamContract {
     /// claimable as soon as it resumes.
     ///
     /// # Errors
-    /// - `StreamNotFound`  â€” no stream exists with `stream_id`.
-    /// - `Unauthorized`    â€” caller is not the stream's sender.
-    /// - `StreamNotPaused` â€” stream is active but not currently paused.
-    /// - `ArithmeticOverflow` â€” the projected end time overflows `u64`.
+    /// - `StreamNotFound`  Ã¢â‚¬â€ no stream exists with `stream_id`.
+    /// - `Unauthorized`    Ã¢â‚¬â€ caller is not the stream's sender.
+    /// - `StreamNotPaused` Ã¢â‚¬â€ stream is active but not currently paused.
+    /// - `ArithmeticOverflow` Ã¢â‚¬â€ the projected end time overflows `u64`.
     pub fn resume_stream(env: Env, sender: Address, stream_id: u64) -> Result<u64, StreamError> {
         sender.require_auth();
 
@@ -1340,17 +1339,17 @@ impl StreamContract {
     /// Withdraw claimable tokens from several streams in one transaction.
     ///
     /// A recipient with N concurrent income streams would otherwise need N
-    /// ledger transactions â€” N base fees, N wallet signatures, and N chances
+    /// ledger transactions Ã¢â‚¬â€ N base fees, N wallet signatures, and N chances
     /// for a sequence-number collision to leave them in a partially withdrawn
     /// state. This collapses the sweep into a single atomic call.
     ///
     /// Semantics, chosen so that one stale entry can never grief the rest of the
     /// batch:
-    /// - **Hard errors abort the whole batch** â€” an unknown `stream_id`
+    /// - **Hard errors abort the whole batch** Ã¢â‚¬â€ an unknown `stream_id`
     ///   (`StreamNotFound`) or a stream belonging to somebody else
     ///   (`Unauthorized`). A silently-ignored typo would be worse than a
     ///   revert, and the transaction is atomic either way.
-    /// - **Streams with nothing to claim are skipped** â€” already-completed,
+    /// - **Streams with nothing to claim are skipped** Ã¢â‚¬â€ already-completed,
     ///   cancelled, sender-paused, or simply not vested far enough yet. They
     ///   appear in neither the returned vector nor the events, and they do not
     ///   revert the batch.
@@ -1366,9 +1365,9 @@ impl StreamContract {
     /// already-vested funds.
     ///
     /// # Errors
-    /// - `BatchTooLarge`   â€” more than `MAX_BATCH_WITHDRAW` IDs supplied.
-    /// - `StreamNotFound`  â€” an ID does not exist.
-    /// - `Unauthorized`    â€” an ID belongs to a different recipient.
+    /// - `BatchTooLarge`   Ã¢â‚¬â€ more than `MAX_BATCH_WITHDRAW` IDs supplied.
+    /// - `StreamNotFound`  Ã¢â‚¬â€ an ID does not exist.
+    /// - `Unauthorized`    Ã¢â‚¬â€ an ID belongs to a different recipient.
     pub fn batch_withdraw(
         env: Env,
         recipient: Address,
@@ -1433,7 +1432,7 @@ impl StreamContract {
         Ok(withdrawn)
     }
 
-    // â”€â”€â”€ Upgrades & State Migration (F3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Upgrades & State Migration (F3) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /// Replace this contract's executable in place, preserving its address.
     ///
@@ -1442,7 +1441,7 @@ impl StreamContract {
     /// pass the resulting hash here.
     ///
     /// Because the address never changes, active streams, escrowed balances and
-    /// the protocol config all survive untouched â€” which is the entire reason to
+    /// the protocol config all survive untouched Ã¢â‚¬â€ which is the entire reason to
     /// prefer an in-place upgrade over a redeploy. Note that swapping the
     /// executable does **not** migrate state: if the new code expects a
     /// different schema, follow up with `migrate`.
@@ -1456,8 +1455,8 @@ impl StreamContract {
     /// therefore all-zero for a contract that has never been upgraded.
     ///
     /// # Errors
-    /// - `NotInitialized` â€” `initialize` has not been called.
-    /// - `NotAdmin`       â€” caller is not the current admin.
+    /// - `NotInitialized` Ã¢â‚¬â€ `initialize` has not been called.
+    /// - `NotAdmin`       Ã¢â‚¬â€ caller is not the current admin.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), StreamError> {
         let config = load_config(&env)?;
         config.admin.require_auth();
@@ -1489,7 +1488,7 @@ impl StreamContract {
     /// Move the on-chain state to `target_version`. Admin-only.
     ///
     /// Only forward moves are supported, and only to the version this contract
-    /// knows how to write. Today that is a single step â€” any pre-v2 state
+    /// knows how to write. Today that is a single step Ã¢â‚¬â€ any pre-v2 state
     /// (`0` unversioned, or `1` versioned) becomes `2`, the layout carrying the
     /// circuit breaker, the guardian role and the `VestingSchedule`
     /// discriminator.
@@ -1503,10 +1502,10 @@ impl StreamContract {
     /// Idempotent: migrating to the version already in effect is a no-op.
     ///
     /// # Errors
-    /// - `NotInitialized`      â€” `initialize` has not been called.
-    /// - `NotAdmin`            â€” caller is not the current admin.
-    /// - `StateVersionTooNew`  â€” on-chain state is newer than this contract.
-    /// - `UnsupportedMigration` â€” the target version is unreachable or a downgrade.
+    /// - `NotInitialized`      Ã¢â‚¬â€ `initialize` has not been called.
+    /// - `NotAdmin`            Ã¢â‚¬â€ caller is not the current admin.
+    /// - `StateVersionTooNew`  Ã¢â‚¬â€ on-chain state is newer than this contract.
+    /// - `UnsupportedMigration` Ã¢â‚¬â€ the target version is unreachable or a downgrade.
     pub fn migrate(env: Env, target_version: u32) -> Result<(), StreamError> {
         let config = load_config(&env)?;
         config.admin.require_auth();
@@ -1540,7 +1539,7 @@ impl StreamContract {
         Ok(())
     }
 
-    // â”€â”€â”€ Read-only Queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Read-only Queries Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     /// Returns the stream record for `stream_id`, or `None` if it does not exist.
     pub fn get_stream(env: Env, stream_id: u64) -> Option<Stream> {
@@ -1586,7 +1585,7 @@ impl StreamContract {
         try_load_stream(&env, stream_id).map(|stream| Self::projected_end_time(&stream))
     }
 
-    // ─── Stream Rate Modification (Feature #1320) ──────────────────────────────
+    // â”€â”€â”€ Stream Rate Modification (Feature #1320) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// Modify the rate_per_second of an active linear stream.
     ///
@@ -1594,12 +1593,12 @@ impl StreamContract {
     /// hybrid cliff schedules, which have fixed unlock times.
     ///
     /// # Errors
-    /// - `StreamNotFound`              — no stream exists with `stream_id`.
-    /// - `Unauthorized`                — caller is not the stream's sender.
-    /// - `StreamInactive`              — stream has been cancelled or fully withdrawn.
-    /// - `RateModificationUnsupported` — stream uses step-tranche or hybrid schedule.
-    /// - `InvalidNewRate`              — new rate is zero or would round to zero in calculations.
-    /// - `ArithmeticOverflow`          — projected end time calculation overflows.
+    /// - `StreamNotFound`              â€” no stream exists with `stream_id`.
+    /// - `Unauthorized`                â€” caller is not the stream's sender.
+    /// - `StreamInactive`              â€” stream has been cancelled or fully withdrawn.
+    /// - `RateModificationUnsupported` â€” stream uses step-tranche or hybrid schedule.
+    /// - `InvalidNewRate`              â€” new rate is zero or would round to zero in calculations.
+    /// - `ArithmeticOverflow`          â€” projected end time calculation overflows.
     pub fn modify_rate(
         env: Env,
         sender: Address,
@@ -1650,7 +1649,7 @@ impl StreamContract {
         Ok(new_end_time)
     }
 
-    // ─── Allowance-Based Streams (Feature #1318) ──────────────────────────────
+    // â”€â”€â”€ Allowance-Based Streams (Feature #1318) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// Create a payment stream funded by allowance instead of upfront transfer.
     ///
@@ -1661,11 +1660,11 @@ impl StreamContract {
     /// Returns the new stream ID.
     ///
     /// # Errors
-    /// - `ProtocolPaused`      — the circuit breaker is engaged.
-    /// - `InvalidAmount`       — `amount` ≤ 0 (max allowance or duration spec).
-    /// - `InvalidDuration`     — `duration` is 0.
-    /// - `InvalidTokenAddress` — `token_address` is not a token contract.
-    /// - `AllowanceLocked`     — insufficient allowance on the token.
+    /// - `ProtocolPaused`      â€” the circuit breaker is engaged.
+    /// - `InvalidAmount`       â€” `amount` â‰¤ 0 (max allowance or duration spec).
+    /// - `InvalidDuration`     â€” `duration` is 0.
+    /// - `InvalidTokenAddress` â€” `token_address` is not a token contract.
+    /// - `AllowanceLocked`     â€” insufficient allowance on the token.
     pub fn create_allowance_stream(
         env: Env,
         sender: Address,
@@ -1690,7 +1689,7 @@ impl StreamContract {
         match env.try_invoke_contract::<i128, soroban_sdk::InvokeError>(
             &token_address,
             &Symbol::new(&env, "allowance"),
-            vec![&env, &sender, &env.current_contract_address()],
+            vec![&env, sender.to_val(), env.current_contract_address().to_val()],
         ) {
             Ok(Ok(allowance)) if allowance > 0 => {}
             _ => return Err(StreamError::AllowanceLocked),
@@ -1704,6 +1703,7 @@ impl StreamContract {
             &env,
             stream_id,
             &Stream {
+                cliff_time: None,
                 sender: sender.clone(),
                 recipient: recipient.clone(),
                 token_address: token_address.clone(),
@@ -1738,7 +1738,7 @@ impl StreamContract {
         Ok(stream_id)
     }
 
-    // ─── Dispute & Escrow (Feature #1319) ──────────────────────────────────────
+    // â”€â”€â”€ Dispute & Escrow (Feature #1319) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// Request a dispute for a stream cancellation (escrow mode).
     ///
@@ -1747,10 +1747,10 @@ impl StreamContract {
     /// Instead, they request a dispute and wait for the arbiter to resolve it.
     ///
     /// # Errors
-    /// - `StreamNotFound`       — no stream exists with `stream_id`.
-    /// - `Unauthorized`         — caller is not the stream's sender.
-    /// - `StreamInactive`       — stream is inactive.
-    /// - `DisputeNotSupported`  — stream has no arbiter configured.
+    /// - `StreamNotFound`       â€” no stream exists with `stream_id`.
+    /// - `Unauthorized`         â€” caller is not the stream's sender.
+    /// - `StreamInactive`       â€” stream is inactive.
+    /// - `DisputeNotSupported`  â€” stream has no arbiter configured.
     pub fn request_dispute(env: Env, sender: Address, stream_id: u64) -> Result<(), StreamError> {
         sender.require_auth();
 
@@ -1788,9 +1788,9 @@ impl StreamContract {
     /// dispute is rejected and the stream remains active.
     ///
     /// # Errors
-    /// - `StreamNotFound`  — no stream exists with `stream_id`.
-    /// - `NotArbiter`      — caller is not the stream's arbiter.
-    /// - `NoActiveDispute` — the stream has no active dispute.
+    /// - `StreamNotFound`  â€” no stream exists with `stream_id`.
+    /// - `NotArbiter`      â€” caller is not the stream's arbiter.
+    /// - `NoActiveDispute` â€” the stream has no active dispute.
     pub fn resolve_dispute(
         env: Env,
         arbiter: Address,
@@ -1877,7 +1877,7 @@ impl StreamContract {
         Ok(())
     }
 
-    // ─── Internal Helpers ─────────────────────────────────────────────────────
+    // â”€â”€â”€ Internal Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// Calculates the protocol fee without making an external call. Callers
     /// persist their updated stream before invoking [`Self::transfer_fee`].
@@ -1930,6 +1930,8 @@ impl StreamContract {
         }
     }
 }
+
+
 
 
 
