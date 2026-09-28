@@ -28,7 +28,6 @@ const config = {
           routeBasePath: "/",
           sidebarPath: "./sidebars.js",
           editUrl: "https://github.com/LabsCrypt/flowfi/edit/main/docs-site/",
-          remarkPlugins: [require("remark-mermaid")],
         },
         theme: {
           customCss: "./src/css/custom.css",
@@ -36,6 +35,10 @@ const config = {
       },
     ],
   ],
+
+  // Mermaid diagrams render from ```mermaid code blocks via the official
+  // theme (no third-party remark plugin needed).
+  themes: ["@docusaurus/theme-mermaid"],
 
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
