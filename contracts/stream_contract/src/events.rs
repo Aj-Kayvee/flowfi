@@ -322,14 +322,3 @@ pub struct AllowanceStreamCreatedEvent {
     pub rate_per_second: i128,
     pub start_time: u64,
 }
-
-/// Emitted when a stream is closed and purged from storage.
-///
-/// Topic: `("stream_closed", stream_id)`
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StreamClosedEvent {
-    pub stream_id: u64,
-    pub closer: Address,
-    pub timestamp: u64,
-}

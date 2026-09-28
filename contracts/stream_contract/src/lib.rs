@@ -41,7 +41,7 @@ mod property_tests;
 mod test;
 
 use soroban_sdk::{
-    contract, contractimpl, token, vec, Address, BytesN, Env, InvokeError, Symbol, Vec,
+    contract, contractimpl, token, vec, Address, BytesN, Env, IntoVal, InvokeError, Symbol, Vec,
 };
 
 use errors::StreamError;
@@ -51,11 +51,8 @@ use events::{
     FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
     ProtocolPauseStatusEvent, RecipientTransferredEvent, StateMigratedEvent,
     StepVestingStreamCreatedEvent, StreamCancelledEvent, StreamClosedEvent, StreamCompletedEvent,
-    StreamCreatedEvent, StreamPausedEvent, StreamResumedEvent, StreamToppedUpEvent,
-    ProtocolPauseStatusEvent, StateMigratedEvent, StepVestingStreamCreatedEvent,
-    StreamCancelledEvent, StreamClosedEvent, StreamCompletedEvent, StreamCreatedEvent,
-    StreamPausedEvent, StreamRateModifiedEvent, StreamResumedEvent, StreamToppedUpEvent,
-    TokensWithdrawnEvent,
+    StreamCreatedEvent, StreamPausedEvent, StreamRateModifiedEvent, StreamResumedEvent,
+    StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use storage::{
     config_exists, get_contract_version, get_recorded_wasm_hash, load_config, load_stream,
@@ -63,10 +60,8 @@ use storage::{
     save_stream, try_load_config, try_load_stream,
 };
 use types::{
-    BatchStreamInput, ProtocolConfig, Stream, StreamStatus, VestingSchedule, VestingStep,
-    MAX_BATCH_CREATE, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
-    DisputeStatus, ProtocolConfig, Stream, StreamStatus, VestingSchedule, VestingStep,
-    MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
+    BatchStreamInput, DisputeStatus, ProtocolConfig, Stream, StreamStatus, VestingSchedule,
+    VestingStep, MAX_BATCH_CREATE, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
 
 /// Maximum allowed protocol fee: 1 000 bps = 10%.
@@ -530,8 +525,8 @@ impl StreamContract {
         for input in streams.iter() {
             let stream_id = next_stream_id(&env);
             let start_time = env.ledger().timestamp();
-            let net_amount =
-                Self::collect_fee(&env, &input.token_address, input.amount, stream_id)?;
+            let (net_amount, fee_amount, treasury) =
+                Self::collect_fee(&env, &input.token_address, input.amount)?;
             let rate_per_second = net_amount / input.duration as i128;
             if rate_per_second == 0 {
                 return Err(StreamError::InvalidRate);
@@ -556,8 +551,13 @@ impl StreamContract {
                     paused_at: None,
                     status: StreamStatus::Active,
                     schedule: VestingSchedule::Linear,
+                    arbiter: None,
+                    dispute_status: DisputeStatus::None,
+                    is_allowance_based: false,
                 },
             );
+
+            Self::transfer_fee(&env, &input.token_address, stream_id, fee_amount, treasury);
 
             env.events().publish(
                 (Symbol::new(&env, "stream_created"), stream_id),
@@ -620,7 +620,7 @@ impl StreamContract {
         let contract_address = env.current_contract_address();
         token_client.transfer(&sender, &contract_address, &amount);
 
-        let net_amount = Self::collect_fee(&env, &token_address, amount, stream_id)?;
+        let (net_amount, fee_amount, treasury) = Self::collect_fee(&env, &token_address, amount)?;
         let rate_per_second = net_amount / duration as i128;
         if rate_per_second == 0 {
             return Err(StreamError::InvalidRate);
@@ -644,8 +644,13 @@ impl StreamContract {
                 paused_at: None,
                 status: StreamStatus::Active,
                 schedule: VestingSchedule::Linear,
+                arbiter: None,
+                dispute_status: DisputeStatus::None,
+                is_allowance_based: false,
             },
         );
+
+        Self::transfer_fee(&env, &token_address, stream_id, fee_amount, treasury);
 
         env.events().publish(
             (Symbol::new(&env, "stream_created"), stream_id),
@@ -807,7 +812,6 @@ impl StreamContract {
         let contract_address = env.current_contract_address();
         token_client.transfer(&sender, &contract_address, &amount);
 
-        let net_amount = Self::collect_fee(&env, &token_address, amount, stream_id)?;
         let (net_amount, fee_amount, treasury) = Self::collect_fee(&env, &token_address, amount)?;
 
         // Structural validation. Runs *after* the transfer so that the real
@@ -903,7 +907,6 @@ impl StreamContract {
         let contract_address = env.current_contract_address();
         token_client.transfer(&sender, &contract_address, &amount);
 
-        let net_amount = Self::collect_fee(&env, &token_address, amount, stream_id)?;
         let (net_amount, fee_amount, treasury) = Self::collect_fee(&env, &token_address, amount)?;
 
         // The cliff must land strictly after creation, and must leave a
@@ -2007,13 +2010,16 @@ impl StreamContract {
         let stream_id = next_stream_id(&env);
         let start_time = env.ledger().timestamp();
 
-        // Check allowance: just verify it's callable, don't lock it yet
-        let token_client = token::Client::new(&env, &token_address);
+        // Check allowance: just verify it's callable, don't lock it yet.
         // Try to get allowance to validate approval was made
         match env.try_invoke_contract::<i128, soroban_sdk::InvokeError>(
             &token_address,
             &Symbol::new(&env, "allowance"),
-            vec![&env, &sender, &env.current_contract_address()],
+            vec![
+                &env,
+                sender.into_val(&env),
+                env.current_contract_address().into_val(&env),
+            ],
         ) {
             Ok(Ok(allowance)) if allowance > 0 => {}
             _ => return Err(StreamError::AllowanceLocked),
@@ -2035,6 +2041,7 @@ impl StreamContract {
                 withdrawn_amount: 0,
                 start_time,
                 last_update_time: start_time,
+                cliff_time: None,
                 is_active: true,
                 paused: false,
                 paused_at: None,
@@ -2210,7 +2217,7 @@ impl StreamContract {
     /// Time complexity: O(1).
     fn collect_fee(
         env: &Env,
-        token_address: &Address,
+        _token_address: &Address,
         amount: i128,
     ) -> Result<(i128, i128, Option<Address>), StreamError> {
         match try_load_config(env) {
