@@ -152,6 +152,47 @@ model AlertHistory {
   @@index([sentAt])
 }
 
+// ComplianceAuditLog model - immutable security audit trail for sanctions /
+// risk screening outcomes (Issue #1470). Every blocked interaction records the
+// originating address, request IP, risk score and provider tags so enterprise
+// deployments have audit-ready proof that wallets were screened before funds
+// moved.
+model ComplianceAuditLog {
+  id           String   @id @default(uuid())
+  eventType    String   // e.g. "SCREENING_BLOCKED", "SCREENING_ERROR", "KYC_ATTESTATION_SUBMITTED"
+  action       String?  // Route action, e.g. "stream.create"
+  address      String   // Stellar address that was screened
+  ipAddress    String?  // Originating request IP
+  riskScore    Int      // 0 (clean) to 100 (blocked)
+  tags         String[] // Provider tags, e.g. ["OFAC", "Darknet"]
+  isSanctioned Boolean  @default(false)
+  metadata     String?  // JSON string for extra screening context
+  createdAt    DateTime @default(now())
+
+  @@index([address])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+// KycAttestation model - SEP-0009 identity attestations submitted by
+// organizations. Stores the standardised KYC/AML field payload alongside the
+// cryptographic proof so a deployment can prove a recipient was verified.
+model KycAttestation {
+  id             String   @id @default(uuid())
+  organization   String   // Organization / wallet that submitted the attestation
+  subjectAddress String   // Wallet the identity belongs to
+  sep9Fields     String   // JSON string of the SEP-0009 KYC/AML field payload
+  proof          String   // Cryptographic proof / signature over the payload
+  proofType      String?  // Signature scheme, e.g. "ed25519"
+  status         String   @default("PENDING") // PENDING | VERIFIED | REJECTED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organization])
+  @@index([subjectAddress])
+  @@index([status])
+}
+
 // IndexerDeadLetterEvent model - quarantines Soroban events whose processing
 // failed (unexpected payload shape, transient DB lock, RPC timeout mid-handler).
 // A quarantined event is never retried inline by the poll loop, so one malformed

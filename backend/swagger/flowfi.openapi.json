@@ -47,6 +47,10 @@
     {
       "name": "Observability",
       "description": "Prometheus metrics scrape endpoint"
+    },
+    {
+      "name": "Compliance",
+      "description": "Sanctions / OFAC screening and SEP-0009 KYC attestation endpoints"
     }
   ],
   "components": {
@@ -3136,6 +3140,161 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/compliance/kyc-attestation": {
+      "post": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Submit a SEP-0009 KYC/AML attestation",
+        "description": "Allows an organization to submit a cryptographic proof of identity\nverification for a wallet, following the SEP-0009 (Standard KYC / AML\nFields) schema. Attestations are stored as PENDING for out-of-band\nreview and are recorded in the compliance audit trail.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "subjectAddress",
+                  "proof",
+                  "fields"
+                ],
+                "properties": {
+                  "subjectAddress": {
+                    "type": "string",
+                    "description": "Stellar public key the identity belongs to"
+                  },
+                  "organization": {
+                    "type": "string",
+                    "description": "Organization identifier; defaults to the authenticated wallet"
+                  },
+                  "proof": {
+                    "type": "string",
+                    "description": "Cryptographic proof / signature over the identity payload"
+                  },
+                  "proofType": {
+                    "type": "string",
+                    "enum": [
+                      "ed25519",
+                      "secp256k1",
+                      "stellar-signature"
+                    ]
+                  },
+                  "fields": {
+                    "type": "object",
+                    "description": "SEP-0009 KYC/AML fields (snake_case, vendor fields passthrough)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attestation accepted for review"
+          },
+          "400": {
+            "description": "Invalid attestation payload"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/v1/compliance/screen": {
+      "post": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Screen an address against sanctions data",
+        "description": "Runs the configured sanctions / risk screening provider for a wallet\naddress and returns the result. Results are cached for the configured\nTTL. Requires authentication to prevent open enumeration.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "description": "Stellar public key to screen"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Screening result"
+          },
+          "400": {
+            "description": "Invalid request body"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication"
+          },
+          "503": {
+            "description": "Screening provider unavailable"
+          }
+        }
+      }
+    },
+    "/v1/compliance/screen/{address}": {
+      "get": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Screen a wallet address (read-only)",
+        "description": "Convenience GET variant of /v1/compliance/screen for audit tooling.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Stellar public key to screen"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Screening result"
+          },
+          "400": {
+            "description": "Address is required"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication"
+          },
+          "503": {
+            "description": "Screening provider unavailable"
           }
         }
       }
