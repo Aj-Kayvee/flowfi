@@ -47,21 +47,12 @@ use soroban_sdk::{
 use errors::StreamError;
 use events::{
     AdminTransferredEvent, AllowanceStreamCreatedEvent, ContractUpgradedEvent,
-<<<<<<< HEAD
-    DisputeRequestedEvent, DisputeResolvedEvent, EmergencyGuardianUpdatedEvent, FeeCollectedEvent,
-    FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
-    ProtocolPauseStatusEvent, StateMigratedEvent, StepVestingStreamCreatedEvent,
-    StreamCancelledEvent, StreamClosedEvent, StreamCompletedEvent, StreamCreatedEvent,
-    StreamPausedEvent, StreamRateModifiedEvent, StreamResumedEvent, StreamToppedUpEvent,
-    TokensWithdrawnEvent,
-=======
     DisputeRequestedEvent, DisputeResolvedEvent, EmergencyGuardianUpdatedEvent,
     FeeCollectedEvent, FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
     MilestoneConditionUnlockedEvent, ProtocolPauseStatusEvent, StateMigratedEvent,
     StepVestingStreamCreatedEvent, StreamCancelledEvent, StreamClosedEvent,
     StreamCompletedEvent, StreamCreatedEvent, StreamPausedEvent, StreamRateModifiedEvent,
     StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent
->>>>>>> 4b71088 (feat: conditional streams, analytics stack, developer portal, copy feedback)
 };
 use storage::{
     config_exists, get_contract_version, get_recorded_wasm_hash, load_config, load_stream,
