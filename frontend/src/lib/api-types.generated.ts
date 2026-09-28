@@ -3075,6 +3075,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/sentinel/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sentinel anomalies, threat score, and flagged addresses
+         * @description Returns the real-time anomaly dashboard backing the drain sentinel:
+         *     the aggregate 0-100 threat score, the addresses implicated in recent
+         *     anomalies, and the incident history (newest first). Filter by
+         *     `severity`, `address`, or page with `limit`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+                    /** @description Stellar public key to filter incidents by */
+                    address?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sentinel dashboard snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            threatScore?: {
+                                /** @example 75 */
+                                score?: number;
+                                /** @enum {string} */
+                                level?: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+                                incidentCount?: number;
+                                bySeverity?: {
+                                    [key: string]: number;
+                                };
+                                windowMinutes?: number;
+                            };
+                            flaggedAddresses?: {
+                                address?: string;
+                                threatScore?: number;
+                                incidentCount?: number;
+                                highestSeverity?: string;
+                                /** Format: date-time */
+                                lastIncidentAt?: string;
+                            }[];
+                            incidents?: components["schemas"]["SentinelIncident"][];
+                            count?: number;
+                            /** Format: date-time */
+                            generatedAt?: string;
+                        };
+                    };
+                };
+                /** @description Invalid severity filter */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Unauthorized - missing or invalid authentication token */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Forbidden - admin access required */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/sentinel/alerts/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge a sentinel incident */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Incident acknowledged */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Incident not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3378,6 +3513,33 @@ export interface components {
             active: boolean;
             /** Format: date-time */
             createdAt: string;
+        };
+        SentinelIncident: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            ruleId: "VELOCITY_SPIKE" | "MULTI_STREAM_DRAIN" | "HIGH_VALUE_DRAIN" | "TOKEN_VELOCITY_SPIKE" | "ZERO_RUNWAY_FLOOD" | "STREAM_CREATION_SPIKE";
+            /** @enum {string} */
+            severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+            title: string;
+            description: string;
+            /** @description Stellar public key involved */
+            address?: string | null;
+            token?: string | null;
+            streamId?: string | null;
+            ledger?: number | null;
+            /** Format: date-time */
+            detectedAt: string;
+            /** @description Per-incident severity weight (10-90) */
+            threatScore: number;
+            evidence?: {
+                [key: string]: unknown;
+            };
+            /** @description HMAC-signed emergency pause proposal (CRITICAL incidents only) */
+            circuitBreaker?: {
+                [key: string]: unknown;
+            } | null;
+            acknowledged?: boolean;
         };
         HealthResponse: {
             /**
