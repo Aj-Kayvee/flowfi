@@ -4,6 +4,7 @@ import { INDEXER_STATE_ID } from '../lib/indexer-state.js';
 import { sorobanEventWorker } from '../workers/soroban-event-worker.js';
 import { setIndexerLedgers } from '../lib/metrics.js';
 import { withSpan } from '../lib/tracing.js';
+import { sendDeadLetterAlert } from './alert.service.js';
 import logger from '../logger.js';
 
 export interface IndexerStatus {
@@ -145,7 +146,11 @@ function eventTypeOf(event: rpc.Api.EventResponse): string {
   const topic0 = event.topic?.[0];
   if (!topic0) return 'unknown';
   try {
-    return topic0.sym().toString();
+    // `ScVal` is a union; only the symbol arm carries `sym`, and in recent
+    // stellar-sdk versions it is a value (not a method). Read the property and
+    // stringify it so this survives across SDK generations.
+    const sym = (topic0 as unknown as { sym?: { toString(): string } }).sym;
+    return sym ? sym.toString() : 'unknown';
   } catch {
     return 'unknown';
   }
@@ -172,7 +177,7 @@ export async function quarantineEvent(
   const errorMessage = err instanceof Error ? err.message : String(err);
 
   try {
-    await prisma.indexerDeadLetterEvent.upsert({
+    const row = await prisma.indexerDeadLetterEvent.upsert({
       where: { eventId_eventType: { eventId: event.id, eventType } },
       create: {
         eventId: event.id,
@@ -195,6 +200,19 @@ export async function quarantineEvent(
     logger.error(
       `[IndexerService] Quarantined event ${event.id} (${eventType}) at ledger ${event.ledger}: ${errorMessage}`,
     );
+
+    // Fire-and-forget: the alert is deliberately not awaited so a slow or
+    // unreachable chat webhook cannot stall the poll loop. `sendDeadLetterAlert`
+    // never rejects, but guard with `void …catch` anyway.
+    void sendDeadLetterAlert({
+      eventId: event.id,
+      eventType,
+      ledgerSequence: event.ledger,
+      txHash: event.txHash,
+      errorMessage,
+      errorStack: err instanceof Error ? err.stack : undefined,
+      attempts: row?.attempts,
+    }).catch(() => undefined);
   } catch (dbErr) {
     // Never let quarantine bookkeeping itself kill the poll loop.
     logger.error(
