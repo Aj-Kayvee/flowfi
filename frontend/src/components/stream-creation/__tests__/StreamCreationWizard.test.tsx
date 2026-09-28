@@ -660,12 +660,13 @@ describe("StreamCreationWizard", () => {
 
   it("opens the multisig co-signing modal when onSubmit needs more signatures", async () => {
     const { MultisigRequiredError } = await import("@/lib/soroban");
+    const routing = {
+      account: { publicKey: VALID_KEY },
+      progress: { collectedWeight: 1, requiredWeight: 2 },
+      needsProposal: true,
+    } as unknown as ConstructorParameters<typeof MultisigRequiredError>[2];
     const onSubmit = vi.fn().mockRejectedValue(
-      new MultisigRequiredError("needs signatures", "PARTIAL_XDR_VALUE", {
-        account: { publicKey: VALID_KEY },
-        progress: { collectedWeight: 1, requiredWeight: 2 },
-        needsProposal: true,
-      }),
+      new MultisigRequiredError("needs signatures", "PARTIAL_XDR_VALUE", routing),
     );
     const push = vi.fn();
     (useRouter as ReturnType<typeof vi.fn>).mockReturnValue({ push });
