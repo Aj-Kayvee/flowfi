@@ -2,16 +2,14 @@
 
 import { useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
+import type { StreamFormData, StreamFormErrors } from "@/lib/stream-validation";
 
+// The props mirror the shared form hook, so this step edits the same model the
+// wizard validates and submits rather than a local copy of it.
 interface ScheduleStepProps {
-  formData: {
-    duration: string;
-    durationUnit: string;
-    descriptionTag: string;
-    memo?: string;
-  };
-  errors: Record<string, string>;
-  onUpdate: (data: Partial<ScheduleStepProps["formData"]>) => void;
+  formData: StreamFormData;
+  errors: StreamFormErrors;
+  onUpdate: (data: Partial<StreamFormData>) => void;
 }
 
 const MAX_MEMO_BYTES = 28;
@@ -48,7 +46,9 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
             />
             <select
               value={formData.durationUnit}
-              onChange={(e) => onUpdate({ durationUnit: e.target.value })}
+              onChange={(e) =>
+                onUpdate({ durationUnit: e.target.value as StreamFormData["durationUnit"] })
+              }
               className="px-4 py-3 rounded-lg bg-black/40 border border-white/10 focus:border-accent outline-none"
             >
               <option value="days">Days</option>
