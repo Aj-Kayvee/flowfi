@@ -10,15 +10,10 @@
 import { formatTokenCompact } from "@/utils/amount";
 
 export interface CompactAmountProps {
-  /** Amount in base units (e.g. stroops for 7-decimal Stellar assets). */
   amount: bigint;
-  /** Token decimals. Stellar assets use 7. */
   decimals?: number;
-  /** Optional symbol appended after the number. */
   symbol?: string;
-  /** Locale for the compact form; defaults to "en". */
   locale?: string;
-  /** Extra class names on the wrapper span. */
   className?: string;
 }
 
