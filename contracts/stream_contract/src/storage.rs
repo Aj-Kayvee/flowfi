@@ -24,8 +24,7 @@ use crate::types::{
 /// here only so the two can be told apart before a decode is attempted.
 const CONFIG_FIELD_COUNT: u32 = 5;
 const LEGACY_CONFIG_FIELD_COUNT: u32 = 3;
-const STREAM_FIELD_COUNT: u32 = 14;
-const STREAM_FIELD_COUNT: u32 = 16;
+const STREAM_FIELD_COUNT: u32 = 17;
 const LEGACY_STREAM_FIELD_COUNT: u32 = 12;
 
 /// Returns the number of fields in a stored record, or `None` if it is not a map.
@@ -252,14 +251,4 @@ pub fn save_recorded_wasm_hash(env: &Env, hash: &soroban_sdk::BytesN<32>) {
     env.storage()
         .instance()
         .set(&DataKey::ContractWasmHash, hash);
-}
-
-// ─── Stream Deletion ──────────────────────────────────────────────────────────
-
-/// Removes a stream record from persistent storage.
-///
-/// Used to prune fully settled streams and reclaim storage rent.
-pub fn remove_stream(env: &Env, stream_id: u64) {
-    let key = DataKey::Stream(stream_id);
-    env.storage().persistent().remove(&key);
 }

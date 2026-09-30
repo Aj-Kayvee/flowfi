@@ -74,12 +74,12 @@ pub enum StreamError {
     /// Raised by the `checked_*` helpers that guard accrual projection, fee
     /// collection and withdrawal bookkeeping, so an out-of-range amount is
     /// reported instead of silently wrapping or aborting the invocation.
-    ArithmeticOverflow = 28,
+    ArithmeticOverflow = 34,
     /// `resume_stream` was called on a stream that is no longer active.
-    StreamNotActive = 29,
+    StreamNotActive = 35,
     /// `close_stream` was called on a stream that is still active or still
     /// holds unwithdrawn funds, so its record cannot be pruned yet.
-    StreamStillActive = 30,
+    StreamStillActive = 36,
     /// Rate modification attempted on unsupported schedule type.
     RateModificationUnsupported = 28,
     /// New rate is invalid (e.g., zero or too small).
