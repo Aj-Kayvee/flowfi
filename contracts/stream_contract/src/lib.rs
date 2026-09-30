@@ -1702,7 +1702,11 @@ impl StreamContract {
         match env.try_invoke_contract::<i128, soroban_sdk::InvokeError>(
             &token_address,
             &Symbol::new(&env, "allowance"),
-            vec![&env, sender.to_val(), env.current_contract_address().to_val()],
+            vec![
+                &env,
+                sender.to_val(),
+                env.current_contract_address().to_val(),
+            ],
         ) {
             Ok(Ok(allowance)) if allowance > 0 => {}
             _ => return Err(StreamError::AllowanceLocked),
