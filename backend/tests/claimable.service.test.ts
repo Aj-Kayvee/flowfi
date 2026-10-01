@@ -4,6 +4,7 @@ import { ClaimableAmountService } from '../src/services/claimable.service.js';
 function makeStreamState(overrides: Partial<Parameters<ClaimableAmountService['getClaimableAmount']>[0]> = {}) {
   return {
     streamId: 1n,
+    tokenAddress: 'TOKEN_DEFAULT',
     ratePerSecond: '10',
     depositedAmount: '100',
     withdrawnAmount: '0',
@@ -290,7 +291,7 @@ describe('ClaimableAmountService', () => {
 
     // Two streams with the same numeric ID but different token contracts
     const streamTokenA = makeStreamState({
-      streamId: 42,
+      streamId: 42n,
       tokenAddress: 'TOKEN_A',
       ratePerSecond: '10',
       depositedAmount: '1000',
@@ -298,7 +299,7 @@ describe('ClaimableAmountService', () => {
     });
 
     const streamTokenB = makeStreamState({
-      streamId: 42,
+      streamId: 42n,
       tokenAddress: 'TOKEN_B',
       ratePerSecond: '5',
       depositedAmount: '2000',
