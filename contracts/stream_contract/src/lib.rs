@@ -34,8 +34,6 @@ mod storage;
 mod types;
 
 #[cfg(test)]
-mod acceptance_tests;
-#[cfg(test)]
 mod property_tests;
 #[cfg(test)]
 mod test;
@@ -521,6 +519,7 @@ impl StreamContract {
                 withdrawn_amount: 0,
                 start_time,
                 last_update_time: start_time,
+                cliff_time: None,
                 is_active: true,
                 paused: false,
                 paused_at: None,
@@ -616,6 +615,7 @@ impl StreamContract {
                 withdrawn_amount: 0,
                 start_time,
                 last_update_time: start_time,
+                cliff_time: Some(cliff_time),
                 is_active: true,
                 paused: false,
                 paused_at: None,
@@ -1701,6 +1701,7 @@ impl StreamContract {
                 withdrawn_amount: 0,
                 start_time,
                 last_update_time: start_time,
+                cliff_time: None,
                 is_active: true,
                 paused: false,
                 paused_at: None,

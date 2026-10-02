@@ -17,8 +17,8 @@ use events::{
     StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use types::{
-    DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, StreamStatus,
-    VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
+    DataKey, DisputeStatus, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream,
+    StreamStatus, VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -99,6 +99,9 @@ fn test_datakey_stream_serializes_deterministically() {
         paused_at: None,
         status: StreamStatus::Active,
         schedule: VestingSchedule::Linear,
+        arbiter: None,
+        dispute_status: DisputeStatus::None,
+        is_allowance_based: false,
     };
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&key, &stream);
@@ -2298,6 +2301,9 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
             } else {
                 StreamStatus::Active
             },
+            arbiter: None,
+            dispute_status: DisputeStatus::None,
+            is_allowance_based: false,
         };
 
         let claimable = StreamContract::calculate_claimable(&stream, elapsed);
