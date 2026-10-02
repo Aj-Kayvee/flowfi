@@ -13,7 +13,6 @@ import { withSpan } from "../lib/tracing.js";
 import logger, { requestContext } from "../logger.js";
 import { Prisma } from "../generated/prisma/index.js";
 import "../lib/stream-id.js";
-import { rpcPool } from "../lib/rpc-pool.js";
 
 // ─── XDR Decoding Helpers ────────────────────────────────────────────────────
 
