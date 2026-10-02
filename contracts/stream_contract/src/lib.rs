@@ -1689,7 +1689,6 @@ impl StreamContract {
         if allowance <= 0 {
             return Err(StreamError::AllowanceLocked);
         }
-        }
 
         // Calculate rate: use a nominal rate of 1 per second
         // In practice, the actual streaming amount is controlled by the sender's approved allowance
