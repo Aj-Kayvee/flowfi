@@ -4,23 +4,89 @@ use std::string::ToString;
 
 use super::*;
 use soroban_sdk::{
+    contract, contractimpl,
     testutils::{Address as _, Events, Ledger},
     token, vec, xdr, Address, Bytes, BytesN, Env, Symbol, TryFromVal, Val, Vec as SorobanVec,
 };
 
 use errors::StreamError;
 use events::{
-    emit_stream_cancelled, emit_stream_created, emit_tokens_withdrawn,
-    AdminTransferredEvent, ContractUpgradedEvent, EmergencyGuardianUpdatedEvent, FeeCollectedEvent,
-    FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
-    ProtocolPauseStatusEvent, StateMigratedEvent, StepVestingStreamCreatedEvent,
-    StreamCancelledEvent, StreamCompletedEvent, StreamCreatedEvent, StreamPausedEvent,
-    StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
+    emit_stream_cancelled, emit_stream_created, emit_tokens_withdrawn, AdminTransferredEvent,
+    ContractUpgradedEvent, EmergencyGuardianUpdatedEvent, FeeCollectedEvent, FeeConfigUpdatedEvent,
+    HybridCliffStreamCreatedEvent, InitializedEvent, ProtocolPauseStatusEvent, StateMigratedEvent,
+    StepVestingStreamCreatedEvent, StreamCancelledEvent, StreamCompletedEvent, StreamCreatedEvent,
+    StreamPausedEvent, StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use types::{
     DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, StreamStatus,
     VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
+
+/// Minimal fee-token double that reads the stream from inside the treasury
+/// transfer. This makes the fee transfer an actual re-entrancy boundary in the
+/// test instead of a second, sequential public call.
+#[contract]
+struct ReentrantFeeToken;
+
+#[contractimpl]
+impl ReentrantFeeToken {
+    pub fn decimals(_env: Env) -> u32 {
+        7
+    }
+
+    pub fn transfer(env: Env, _from: Address, to: Address, _amount: i128) {
+        if to == env.current_contract_address() {
+            let stream_contract: Address = env
+                .storage()
+                .instance()
+                .get(&Symbol::new(&env, "stream_contract"))
+                .unwrap();
+            let stream = StreamContractClient::new(&env, &stream_contract)
+                .get_stream(&1)
+                .unwrap();
+            env.storage().instance().set(
+                &Symbol::new(&env, "observed_deposit"),
+                &stream.deposited_amount,
+            );
+        }
+    }
+}
+
+#[test]
+fn test_fee_transfer_observes_persisted_stream_on_create_and_top_up() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token = env.register(ReentrantFeeToken, ());
+    let client = create_contract(&env);
+    env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "stream_contract"), &client.address);
+    });
+
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    client.initialize(&Address::generate(&env), &token, &500);
+
+    let stream_id = client.create_stream(&sender, &recipient, &token, &1_000, &100);
+    assert_eq!(stream_id, 1);
+    let observed_create_deposit: i128 = env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "observed_deposit"))
+            .unwrap()
+    });
+    assert_eq!(observed_create_deposit, 950);
+
+    client.top_up_stream(&sender, &stream_id, &500);
+    let observed_top_up_deposit: i128 = env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "observed_deposit"))
+            .unwrap()
+    });
+    assert_eq!(observed_top_up_deposit, 1_425);
+}
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -3291,12 +3357,6 @@ fn test_unpause_restores_creations_and_top_ups() {
     client.top_up_stream(&sender, &id, &500);
     let created = client.create_stream(&sender, &Address::generate(&env), &token, &500, &500);
     assert!(created > id);
-74
-
-74
-
-74
-
     assert_eq!(client.get_stream(&id).unwrap().deposited_amount, 1_500);
 }
 
@@ -5785,8 +5845,7 @@ mod emit_helpers {
         let ev = events
             .iter()
             .find(|e| {
-                Symbol::try_from_val(env, &e.1.get(0).unwrap()).unwrap()
-                    == Symbol::new(env, topic)
+                Symbol::try_from_val(env, &e.1.get(0).unwrap()).unwrap() == Symbol::new(env, topic)
             })
             .expect("expected event not found");
         (ev.1, ev.2)
@@ -5811,11 +5870,11 @@ mod emit_helpers {
             emit_stream_created(
                 &env,
                 StreamCreatedEvent {
-                stream_id: 7,
-                sender: sender.clone(),
-                recipient: recipient.clone(),
-                rate_per_second: 1_000,
-                token_address: token.clone(),
+                    stream_id: 7,
+                    sender: sender.clone(),
+                    recipient: recipient.clone(),
+                    rate_per_second: 1_000,
+                    token_address: token.clone(),
                     deposited_amount: 123_456,
                     start_time: 42,
                 },
@@ -5850,8 +5909,8 @@ mod emit_helpers {
             emit_tokens_withdrawn(
                 &env,
                 TokensWithdrawnEvent {
-                stream_id: 3,
-                recipient: recipient.clone(),
+                    stream_id: 3,
+                    recipient: recipient.clone(),
                     amount: 999,
                     timestamp: 1_000,
                 },

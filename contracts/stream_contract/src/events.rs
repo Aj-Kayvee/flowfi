@@ -258,6 +258,58 @@ pub struct StateMigratedEvent {
     pub new_version: u32,
 }
 
+/// Emitted when a sender modifies a stream's rate (for #1320).
+///
+/// Topic: `("stream_rate_modified", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamRateModifiedEvent {
+    pub stream_id: u64,
+    pub sender: Address,
+    pub old_rate_per_second: i128,
+    pub new_rate_per_second: i128,
+    pub new_end_time: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a cancellation dispute is initiated (for #1319).
+///
+/// Topic: `("dispute_requested", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRequestedEvent {
+    pub stream_id: u64,
+    pub sender: Address,
+    pub arbiter: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is resolved (for #1319).
+///
+/// Topic: `("dispute_resolved", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeResolvedEvent {
+    pub stream_id: u64,
+    pub arbiter: Address,
+    pub approved: bool,
+    pub timestamp: u64,
+}
+
+/// Emitted when an allowance-based stream is created (for #1318).
+///
+/// Topic: `("allowance_stream_created", stream_id)`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowanceStreamCreatedEvent {
+    pub stream_id: u64,
+    pub sender: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub rate_per_second: i128,
+    pub start_time: u64,
+}
+
 /// Emitted when a terminal (completed or cancelled) stream's storage entry is
 /// pruned via `close_stream`.
 ///
@@ -295,10 +347,8 @@ pub struct StreamClosedEvent {
 ///   `rate_per_second` and `deposited_amount` (after protocol fee), token
 ///   contract address, and the stream's `start_time`.
 pub fn emit_stream_created(env: &Env, event: StreamCreatedEvent) {
-    env.events().publish(
-        (Symbol::new(env, "stream_created"), event.stream_id),
-        event,
-    );
+    env.events()
+        .publish((Symbol::new(env, "stream_created"), event.stream_id), event);
 }
 
 /// Emit a `recipient_transferred` event indexed by `stream_id`.
@@ -423,10 +473,8 @@ pub fn emit_stream_completed(env: &Env, event: StreamCompletedEvent) {
 /// - `event` — the [`StreamClosedEvent`] payload: the `closer` (sender,
 ///   recipient, or protocol admin) and the ledger `timestamp` of the prune.
 pub fn emit_stream_closed(env: &Env, event: StreamClosedEvent) {
-    env.events().publish(
-        (Symbol::new(env, "stream_closed"), event.stream_id),
-        event,
-    );
+    env.events()
+        .publish((Symbol::new(env, "stream_closed"), event.stream_id), event);
 }
 
 /// Emit a `fee_collected` event indexed by `stream_id`.
@@ -444,7 +492,8 @@ pub fn emit_stream_closed(env: &Env, event: StreamClosedEvent) {
 /// - `event` — the [`FeeCollectedEvent`] payload: treasury address, collected
 ///   `fee_amount` in stroops, and the token contract the fee was paid in.
 pub fn emit_fee_collected(env: &Env, event: FeeCollectedEvent) {
-    env.events().publish((Symbol::new(env, "fee_collected"), event.stream_id), event);
+    env.events()
+        .publish((Symbol::new(env, "fee_collected"), event.stream_id), event);
 }
 
 /// Emit an `initialized` event.
@@ -462,7 +511,8 @@ pub fn emit_fee_collected(env: &Env, event: FeeCollectedEvent) {
 /// - `event` — the [`InitializedEvent`] payload: initial `admin`, `treasury`,
 ///   and `fee_rate_bps`.
 pub fn emit_initialized(env: &Env, event: InitializedEvent) {
-    env.events().publish((Symbol::new(env, "initialized"),), event);
+    env.events()
+        .publish((Symbol::new(env, "initialized"),), event);
 }
 
 /// Emit a `fee_config_updated` event.
@@ -479,7 +529,8 @@ pub fn emit_initialized(env: &Env, event: InitializedEvent) {
 /// - `event` — the [`FeeConfigUpdatedEvent`] payload: acting `admin`, old and
 ///   new treasury addresses, and old and new fee rates in bps.
 pub fn emit_fee_config_updated(env: &Env, event: FeeConfigUpdatedEvent) {
-    env.events().publish((Symbol::new(env, "fee_config_updated"),), event);
+    env.events()
+        .publish((Symbol::new(env, "fee_config_updated"),), event);
 }
 
 /// Emit an `admin_transferred` event.
@@ -496,7 +547,8 @@ pub fn emit_fee_config_updated(env: &Env, event: FeeConfigUpdatedEvent) {
 /// - `event` — the [`AdminTransferredEvent`] payload: `previous_admin` and
 ///   `new_admin` addresses.
 pub fn emit_admin_transferred(env: &Env, event: AdminTransferredEvent) {
-    env.events().publish((Symbol::new(env, "admin_transferred"),), event);
+    env.events()
+        .publish((Symbol::new(env, "admin_transferred"),), event);
 }
 
 /// Emit a `stream_paused` event indexed by `stream_id`.
@@ -513,10 +565,8 @@ pub fn emit_admin_transferred(env: &Env, event: AdminTransferredEvent) {
 /// - `event` — the [`StreamPausedEvent`] payload: sender and the ledger
 ///   `paused_at` timestamp at which accrual was frozen.
 pub fn emit_stream_paused(env: &Env, event: StreamPausedEvent) {
-    env.events().publish(
-        (Symbol::new(env, "stream_paused"), event.stream_id),
-        event,
-    );
+    env.events()
+        .publish((Symbol::new(env, "stream_paused"), event.stream_id), event);
 }
 
 /// Emit a `stream_resumed` event indexed by `stream_id`.
@@ -533,10 +583,8 @@ pub fn emit_stream_paused(env: &Env, event: StreamPausedEvent) {
 /// - `event` — the [`StreamResumedEvent`] payload: sender and the recomputed
 ///   `new_end_time` at which the stream will now fully drain.
 pub fn emit_stream_resumed(env: &Env, event: StreamResumedEvent) {
-    env.events().publish(
-        (Symbol::new(env, "stream_resumed"), event.stream_id),
-        event,
-    );
+    env.events()
+        .publish((Symbol::new(env, "stream_resumed"), event.stream_id), event);
 }
 
 /// Emit a `protocol_pause_status` event.
@@ -554,7 +602,8 @@ pub fn emit_stream_resumed(env: &Env, event: StreamResumedEvent) {
 ///   the breaker, the new `paused` state, and the ledger `timestamp` of the
 ///   transition.
 pub fn emit_protocol_pause_status(env: &Env, event: ProtocolPauseStatusEvent) {
-    env.events().publish((Symbol::new(env, "protocol_pause_status"),), event);
+    env.events()
+        .publish((Symbol::new(env, "protocol_pause_status"),), event);
 }
 
 /// Emit an `emergency_guardian_updated` event.
@@ -571,7 +620,8 @@ pub fn emit_protocol_pause_status(env: &Env, event: ProtocolPauseStatusEvent) {
 /// - `event` — the [`EmergencyGuardianUpdatedEvent`] payload: acting `admin`
 ///   and the newly configured `guardian` (`None` when the role was cleared).
 pub fn emit_emergency_guardian_updated(env: &Env, event: EmergencyGuardianUpdatedEvent) {
-    env.events().publish((Symbol::new(env, "emergency_guardian_updated"),), event);
+    env.events()
+        .publish((Symbol::new(env, "emergency_guardian_updated"),), event);
 }
 
 /// Emit a `step_vesting_stream_created` event indexed by `stream_id`.
@@ -591,7 +641,10 @@ pub fn emit_emergency_guardian_updated(env: &Env, event: EmergencyGuardianUpdate
 ///   final milestone.
 pub fn emit_step_vesting_stream_created(env: &Env, event: StepVestingStreamCreatedEvent) {
     env.events().publish(
-        (Symbol::new(env, "step_vesting_stream_created"), event.stream_id),
+        (
+            Symbol::new(env, "step_vesting_stream_created"),
+            event.stream_id,
+        ),
         event,
     );
 }
@@ -613,7 +666,10 @@ pub fn emit_step_vesting_stream_created(env: &Env, event: StepVestingStreamCreat
 ///   `cliff_unlock_amount`, and the post-cliff linear `rate_per_second`.
 pub fn emit_hybrid_cliff_stream_created(env: &Env, event: HybridCliffStreamCreatedEvent) {
     env.events().publish(
-        (Symbol::new(env, "hybrid_cliff_stream_created"), event.stream_id),
+        (
+            Symbol::new(env, "hybrid_cliff_stream_created"),
+            event.stream_id,
+        ),
         event,
     );
 }
@@ -634,7 +690,8 @@ pub fn emit_hybrid_cliff_stream_created(env: &Env, event: HybridCliffStreamCreat
 ///   `old_wasm_hash` in force before the call, the `new_wasm_hash` being
 ///   installed, and the ledger `timestamp` of the upgrade.
 pub fn emit_contract_upgraded(env: &Env, event: ContractUpgradedEvent) {
-    env.events().publish((Symbol::new(env, "contract_upgraded"),), event);
+    env.events()
+        .publish((Symbol::new(env, "contract_upgraded"),), event);
 }
 
 /// Emit a `state_migrated` event.
@@ -652,5 +709,6 @@ pub fn emit_contract_upgraded(env: &Env, event: ContractUpgradedEvent) {
 /// - `event` — the [`StateMigratedEvent`] payload: acting `admin` plus the
 ///   `old_version` and `new_version` schema versions.
 pub fn emit_state_migrated(env: &Env, event: StateMigratedEvent) {
-    env.events().publish((Symbol::new(env, "state_migrated"),), event);
+    env.events()
+        .publish((Symbol::new(env, "state_migrated"),), event);
 }
