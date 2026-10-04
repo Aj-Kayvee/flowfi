@@ -4,7 +4,6 @@ use std::string::ToString;
 
 use super::*;
 use soroban_sdk::{
-    contract, contractimpl,
     testutils::{Address as _, Events, Ledger},
     token, vec, xdr, Address, Bytes, BytesN, Env, Symbol, TryFromVal, Val, Vec as SorobanVec,
 };
