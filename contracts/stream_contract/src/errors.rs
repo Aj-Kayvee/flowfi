@@ -137,6 +137,15 @@ pub(crate) mod test_diagnostics {
                 StreamError::UnsupportedMigration => "UnsupportedMigration",
                 StreamError::StateVersionTooNew => "StateVersionTooNew",
                 StreamError::TopUpUnsupported => "TopUpUnsupported",
+                StreamError::RateModificationUnsupported => "RateModificationUnsupported",
+                StreamError::InvalidNewRate => "InvalidNewRate",
+                StreamError::DisputeNotSupported => "DisputeNotSupported",
+                StreamError::NoActiveDispute => "NoActiveDispute",
+                StreamError::NotArbiter => "NotArbiter",
+                StreamError::AllowanceLocked => "AllowanceLocked",
+                StreamError::ArithmeticOverflow => "ArithmeticOverflow",
+                StreamError::StreamStillActive => "StreamStillActive",
+                StreamError::StreamNotActive => "StreamNotActive",
             }
         }
     }
