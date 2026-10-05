@@ -176,9 +176,12 @@ describe('pg-pool', () => {
 
       const drained = drainPgPool(pool, { timeoutMs: 1_000 });
 
-      // Fire the timeout, then observe the rejection on the drain promise.
+      // Attach the rejection expectation before firing the timeout so the
+      // drain promise always has a handler when it rejects (otherwise Node
+      // reports an unhandled rejection and vitest exits non-zero).
+      const outcome = expect(drained).rejects.toThrow('pg pool drain timed out after 1000ms');
       await vi.advanceTimersByTimeAsync(1_000);
-      await expect(drained).rejects.toThrow('pg pool drain timed out after 1000ms');
+      await outcome;
     });
 
     it('defaults the timeout to PG_POOL_DRAIN_TIMEOUT_MS or 30s', async () => {
@@ -212,8 +215,9 @@ describe('pg-pool', () => {
 
       const drained = drainPgPool(pool);
 
+      const outcome = expect(drained).rejects.toThrow('pg pool drain timed out after 250ms');
       await vi.advanceTimersByTimeAsync(250);
-      await expect(drained).rejects.toThrow('pg pool drain timed out after 250ms');
+      await outcome;
     });
   });
 });
