@@ -127,7 +127,7 @@ describe('pg-pool', () => {
 
     it('logs that the pool is being drained and resolves when end() succeeds', async () => {
       const { drainPgPool } = await import('../src/lib/pg-pool.js');
-      const logger = (await import('../src/logger.js')).default as { info: ReturnType<typeof vi.fn> };
+      const logger = (await import('../src/logger.js')).default as unknown as { info: ReturnType<typeof vi.fn> };
       const endSpy = vi.fn().mockResolvedValue(undefined);
       const pool = makeMockPool(endSpy);
 
@@ -141,7 +141,7 @@ describe('pg-pool', () => {
 
     it('waits for in-flight queries to flush before resolving', async () => {
       const { drainPgPool } = await import('../src/lib/pg-pool.js');
-      const logger = (await import('../src/logger.js')).default as { info: ReturnType<typeof vi.fn> };
+      const logger = (await import('../src/logger.js')).default as unknown as { info: ReturnType<typeof vi.fn> };
       let releaseQuery!: () => void;
       const inFlightQuery = new Promise<void>((resolve) => {
         releaseQuery = resolve;
