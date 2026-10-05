@@ -17,8 +17,8 @@ use events::{
     StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use types::{
-    DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, StreamStatus,
-    VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
+    DataKey, DisputeStatus, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream,
+    StreamStatus, VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
 
 #[test]
@@ -47,6 +47,10 @@ fn test_fee_is_deducted_and_stream_persists_on_create_and_top_up() {
     // 5% of 1_000 plus 5% of 500 is withheld to the treasury.
     assert_eq!(token::Client::new(&env, &token).balance(&treasury), 75);
 }
+// NOTE: fee-transfer CEI (persist before transfer) is verified via
+// post-call state/events, not via re-entrant callback: Soroban hosts
+// forbid contract re-entry ("Contract re-entry is not allowed"), so a
+// fee token cannot call back into get_stream during transfer.
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -4543,6 +4547,7 @@ fn raw_stream_field_count(env: &Env, contract: &Address, stream_id: u64) -> u32 
 fn stream_record_is_current_shape(env: &Env, contract: &Address, stream_id: u64) -> bool {
     // `Stream` carries the `schedule` and `cliff_time` fields; `LegacyStream`
     // carries neither.
+    // `Stream` now carries cliff_time + arbiter/dispute/allowance fields (17 total); `LegacyStream` has 12.
     raw_stream_field_count(env, contract, stream_id) == 17
 }
 

@@ -807,6 +807,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List verified token metadata
+         * @description Returns symbol, name, decimals, contract address and icon for every
+         *     verified Stellar asset. The response carries an `ETag` and a
+         *     `Cache-Control` header; clients should revalidate with
+         *     `If-None-Match` and accept a `304 Not Modified` while the metadata is
+         *     unchanged.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Verified token metadata */
+                200: {
+                    headers: {
+                        /** @description public, max-age=3600, stale-while-revalidate=86400 */
+                        "Cache-Control"?: string;
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            tokens?: Record<string, never>[];
+                            /** Format: date-time */
+                            updatedAt?: string;
+                        };
+                    };
+                };
+                /** @description Not Modified - the caller's cached copy is still current */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/streams": {
         parameters: {
             query?: never;

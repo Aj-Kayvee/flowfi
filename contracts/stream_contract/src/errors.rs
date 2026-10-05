@@ -92,4 +92,10 @@ pub enum StreamError {
     /// `close_stream` was called on a stream that is still active or still
     /// holds unwithdrawn funds, so its record cannot be pruned yet.
     StreamStillActive = 36,
+    /// Checked arithmetic overflow (fee, withdrawal total, or end-time projection).
+    ArithmeticOverflow = 34,
+    /// Stream is still active / holds funds and cannot be pruned yet.
+    StreamStillActive = 35,
+    /// Operation requires an active stream, but the stream is inactive.
+    StreamNotActive = 36,
 }
