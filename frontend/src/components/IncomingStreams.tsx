@@ -13,6 +13,8 @@ interface IncomingStreamsProps {
     streams: Stream[];
     onWithdraw: (stream: Stream) => Promise<void>;
     withdrawingStreamId?: string | null;
+    /** Stream highlighted by keyboard navigation (j/k). */
+    selectedStreamId?: string | null;
 }
 
 const COLUMNS = [
@@ -132,6 +134,7 @@ const IncomingStreams: React.FC<IncomingStreamsProps> = ({
     streams,
     onWithdraw,
     withdrawingStreamId = null,
+    selectedStreamId = null,
 }) => {
     const [filter, setFilter] = useState<'All' | 'Active' | 'Completed' | 'Paused'>('All');
     const [showSettings, setShowSettings] = useState(false);
@@ -315,10 +318,13 @@ const IncomingStreams: React.FC<IncomingStreamsProps> = ({
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {sortedStreams.map((stream) => {
                                 const isPaused = stream.status === 'Paused';
+                                const isSelected = selectedStreamId === stream.id;
                                 return (
                                     <tr
                                         key={stream.id}
-                                        className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${isPaused ? 'bg-gray-50/50 dark:bg-gray-800/50 opacity-75' : ''}`}
+                                        data-stream-id={stream.id}
+                                        aria-selected={isSelected}
+                                        className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${isPaused ? 'bg-gray-50/50 dark:bg-gray-800/50 opacity-75' : ''} ${isSelected ? 'bg-accent/10 ring-1 ring-inset ring-accent/50' : ''}`}
                                     >
                                         {isVisible('sender') && (
                                             <td className="px-6 py-4 whitespace-nowrap">
