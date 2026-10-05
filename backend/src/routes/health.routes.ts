@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma.js';
 import { INDEXER_STATE_ID } from '../lib/indexer-state.js';
 import { setIndexerLedgers } from '../lib/metrics.js';
 import { isRedisAvailable } from '../lib/redis.js';
+import { checkRpcHealth } from '../services/sorobanService.js';
+import { sorobanEventWorker } from '../workers/soroban-event-worker.js';
 
 const router = Router();
 
@@ -12,7 +14,15 @@ interface CachedHealth {
   expiresAt: number;
 }
 let _healthCache: CachedHealth | null = null;
-const HEALTH_CACHE_MS = 2_000;
+// 2s cache (issue #1511). Disabled under NODE_ENV=test unless HEALTH_CACHE_MS is set.
+const HEALTH_CACHE_MS = Number(
+  process.env.HEALTH_CACHE_MS ?? (process.env.NODE_ENV === 'test' ? 0 : 2_000),
+);
+
+/** Clears the cached health result (used by tests). */
+export function resetHealthCache(): void {
+  _healthCache = null;
+}
 
 /**
  * @openapi
@@ -25,18 +35,18 @@ const HEALTH_CACHE_MS = 2_000;
  *       determined by DB reachability alone. Indexer lag is reported in the
  *       body for observability but only forces a 503 when the indexer is
  *       actually enabled (`STREAM_CONTRACT_ID` env var set) and its state row
- *       is stale (lag > 60 s). Response is cached in-memory for 2 s so
- *       consecutive rapid requests do not re-execute the DB and Redis probes
- *       (issue #1511).
+ *       is stale (lag > 60 s), or when recent event-processing failures spike.
+ *       Response is cached in-memory for 2 s so consecutive rapid requests do
+ *       not re-execute the DB and Redis probes (issue #1511).
  *     responses:
  *       200: { description: Service is healthy }
  *       503: { description: Service is degraded or unhealthy }
  *       429: { description: Rate limited }
  */
 router.get('/', async (_req: Request, res: Response) => {
-  const now = Date.now();
-  if (_healthCache && _healthCache.expiresAt > now) {
-    return res.status(_healthCache.status).json(_healthCache.body);
+  if (_healthCache && _healthCache.expiresAt > Date.now()) {
+    res.status(_healthCache.status).json(_healthCache.body);
+    return;
   }
 
   let dbStatus = 'connected';
@@ -71,13 +81,27 @@ router.get('/', async (_req: Request, res: Response) => {
     }
   }
 
+  const eventCounters = sorobanEventWorker.getEventCounters();
+
+  // 503 when: DB is down, OR the indexer is enabled and its state row is stale
+  // (lag > 60), OR recent event-processing failures are spiking. A missing state
+  // row (lag === -1) is a cold-start condition, not a failure.
   const indexerLagDegraded = indexerEnabled && indexerLag > 60;
-  const indexerFailureDegraded = false;
-  const isHealthy = dbStatus === 'connected' && !indexerLagDegraded;
+  const indexerFailureDegraded = indexerEnabled && eventCounters.degraded;
+  const isHealthy =
+    dbStatus === 'connected' && !indexerLagDegraded && !indexerFailureDegraded;
   const status = isHealthy ? 'ok' : 'degraded';
 
-  const redisStatus = isRedisAvailable() ? 'ok' : 'disabled';
-  const sorobanRpcOk = !indexerEnabled || networkLedger > 0;
+  // Redis is optional, so its status never affects the top-level verdict.
+  const redisConfigured = !!process.env.REDIS_URL;
+  const redisStatus = !redisConfigured
+    ? 'not_configured'
+    : isRedisAvailable()
+      ? 'ok'
+      : 'unavailable';
+
+  // RPC reachability is observability only; it does not gate liveness.
+  const sorobanRpcOk = await checkRpcHealth();
 
   setIndexerLedgers(state?.lastLedger ?? 0, networkLedger);
 
@@ -86,6 +110,10 @@ router.get('/', async (_req: Request, res: Response) => {
     db: dbStatus,
     indexerEnabled,
     indexerLag: indexerLag === -1 ? null : indexerLag,
+    eventsProcessed: eventCounters.eventsProcessed,
+    eventsFailed: eventCounters.eventsFailed,
+    lastErrorAt: eventCounters.lastErrorAt,
+    indexerDegraded: eventCounters.degraded,
     indexerLedgerLag:
       networkLedger > 0 ? Math.max(0, networkLedger - (state?.lastLedger ?? 0)) : null,
     uptime: process.uptime(),
@@ -106,8 +134,10 @@ router.get('/', async (_req: Request, res: Response) => {
   };
 
   const httpStatus = isHealthy ? 200 : 503;
-  _healthCache = { status: httpStatus, body: responseBody, expiresAt: Date.now() + HEALTH_CACHE_MS };
-  return res.status(httpStatus).json(responseBody);
+  if (HEALTH_CACHE_MS > 0) {
+    _healthCache = { status: httpStatus, body: responseBody, expiresAt: Date.now() + HEALTH_CACHE_MS };
+  }
+  res.status(httpStatus).json(responseBody);
 });
 
 export default router;
