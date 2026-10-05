@@ -18,10 +18,6 @@ vi.mock("@/lib/soroban", () => ({
   fetchTokenBalanceDisplay: vi.fn().mockResolvedValue("10000"),
 }));
 
-vi.mock("@/lib/stellar", () => ({
-  isValidStellarPublicKey: vi.fn((val: string) => /^G[A-Z2-7]{55}$/.test(val)),
-}));
-
 vi.mock("@/utils/amount", () => {
   const hasValidPrecision = vi.fn((val: string, decimals: number) => {
     if (!val || val.trim() === "") return true;
@@ -170,8 +166,8 @@ import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/lib/api/_shared";
 import { fetchTokenBalanceDisplay } from "@/lib/soroban";
 
-// Valid Stellar Ed25519 public key: G + 55 base32 chars (A-Z, 2-7)
-const VALID_KEY = "GABCDEFGHJKLMNPQRSTUVWXYZ234567ABCDEFGHJKLMNPQRSTUVWXYZ2";
+// Valid Stellar Ed25519 public key (correct StrKey checksum)
+const VALID_KEY = "GAV4A377RAEV6YVAWZVHXF4VZD5ZBXGIKEMNHV5YIMV5LIKSNQVYUBR7";
 
 function renderWizard(overrides: Partial<React.ComponentProps<typeof StreamCreationWizard>> = {}) {
   const onClose = vi.fn();
@@ -293,7 +289,23 @@ describe("StreamCreationWizard", () => {
     clickNext();
     fireEvent.change(screen.getByLabelText("Recipient Address"), { target: { value: "not-a-key" } });
     clickNext();
-    expect(screen.getByRole("alert")).toHaveTextContent("Invalid Stellar public key format");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Invalid Stellar public key (must start with 'G' and be 56 characters)",
+    );
+  });
+
+  it("rejects a well-formed key with an invalid checksum", () => {
+    renderWizard();
+    clickNext();
+    fireEvent.change(screen.getByLabelText("Recipient Address"), {
+      // Same shape as a real key but with a tampered checksum
+      target: { value: "GAV4A377RAEV6YVAWZVHXF4VZD5ZBXGIKEMNHV5YIMV5LIKSNQVYUBR8" },
+    });
+    clickNext();
+    expect(screen.getByText("Step 2 of 5")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Invalid Stellar public key (must start with 'G' and be 56 characters)",
+    );
   });
 
   it("advances past step 2 with a valid recipient", () => {
