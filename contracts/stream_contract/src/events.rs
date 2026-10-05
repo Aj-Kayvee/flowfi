@@ -351,27 +351,6 @@ pub fn emit_stream_created(env: &Env, event: StreamCreatedEvent) {
         .publish((Symbol::new(env, "stream_created"), event.stream_id), event);
 }
 
-/// Emit a `recipient_transferred` event indexed by `stream_id`.
-///
-/// # Event topic
-/// `("recipient_transferred", stream_id: u64)`.
-///
-/// # Emission trigger
-/// Currently no entrypoint emits this payload; it is reserved for stream
-/// control transfer and defined so the wire format stays pinned here.
-///
-/// # Parameters
-/// - `env` — the Soroban environment to publish into.
-/// - `event` — the [`RecipientTransferredEvent`] payload: old and new
-///   recipient addresses, the settled amount at transfer time, and the ledger
-///   timestamp of the transfer.
-pub fn emit_recipient_transferred(env: &Env, event: RecipientTransferredEvent) {
-    env.events().publish(
-        (Symbol::new(env, "recipient_transferred"), event.stream_id),
-        event,
-    );
-}
-
 /// Emit a `stream_topped_up` event indexed by `stream_id`.
 ///
 /// # Event topic
