@@ -90,6 +90,9 @@ function app(): express.Express {
   return instance;
 }
 
+// Tokens this API issues always carry the issuer and audience it verifies
+// against, so a token without them is rejected as unauthenticated rather than
+// as non-admin. Mirrors the shape `verifyChallenge` mints.
 function tokenFor(publicKey: string): string {
   const now = Math.floor(Date.now() / 1000);
   return signJwt({
