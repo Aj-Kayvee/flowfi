@@ -25,26 +25,6 @@ export const createPgPoolConfig = (overrides?: Partial<pg.PoolConfig>): pg.PoolC
   ...overrides,
 });
 
-export interface PoolMetrics {
-  totalCount: number;
-  idleCount: number;
-  waitingCount: number;
-}
-
-/**
- * Snapshot the pool's utilisation for the admin metrics endpoint.
- *
- * Exposed separately from `publishPoolMetrics` so callers can report the same
- * numbers without depending on Prometheus being configured.
- */
-export function getPoolMetrics(pool: pg.Pool): PoolMetrics {
-  return {
-    totalCount: pool.totalCount ?? 0,
-    idleCount: pool.idleCount ?? 0,
-    waitingCount: pool.waitingCount ?? 0,
-  };
-}
-
 /**
  * Snapshot of the pool counts, in the shape the admin API and the Prometheus
  * gauges consume.
