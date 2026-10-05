@@ -69,18 +69,6 @@ pub enum StreamError {
     /// as unclaimable residue. Rejecting is the only option that never lies to
     /// the recipient about when funds become available.
     TopUpUnsupported = 27,
-    /// Rate modification attempted on unsupported schedule type.
-    RateModificationUnsupported = 28,
-    /// New rate is invalid (e.g., zero or too small).
-    InvalidNewRate = 29,
-    /// Dispute operation attempted on non-disputable stream.
-    DisputeNotSupported = 30,
-    /// Stream does not have an active dispute.
-    NoActiveDispute = 31,
-    /// Caller is not the arbiter for this stream's dispute.
-    NotArbiter = 32,
-    /// Allowance-based stream operation failed.
-    AllowanceLocked = 33,
     /// A checked arithmetic operation overflowed the `i128` or `u64` range.
     ///
     /// Raised by the `checked_*` helpers that guard accrual projection, fee
