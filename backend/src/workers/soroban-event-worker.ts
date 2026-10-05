@@ -98,6 +98,7 @@ export class SorobanEventWorker {
   private readonly server: rpc.Server;
   private readonly pollIntervalMs: number;
   private readonly startLedger: number;
+
   private isRunning = false;
   private pollTimer: NodeJS.Timeout | undefined;
   /**

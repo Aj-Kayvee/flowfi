@@ -1,6 +1,7 @@
 import { rpc, xdr, StrKey, Contract, nativeToScVal, Keypair, TransactionBuilder, Networks, Account, Address } from '@stellar/stellar-sdk';
 import logger from '../logger.js';
 import { ApiError } from '../lib/api-error.js';
+import { rpcPool } from '../lib/rpc-pool.js';
 import {
   recordRpcRequest,
   rpcCircuitBreakerTripsTotal,
@@ -368,9 +369,7 @@ export async function pollTransactionStatus(
 
   while (Date.now() - startTime < timeoutMs) {
     const txResponse = await withRpcRetry('getTransaction', () =>
-      withRpcTimeout('getTransaction', () =>
-        executeRpc('getTransaction', (server) => server.getTransaction(txHash)),
-      ),
+      withRpcTimeout('getTransaction', () => executeRpc('getTransaction', (server) => server.getTransaction(txHash))),
     );
 
     if (
@@ -384,8 +383,9 @@ export async function pollTransactionStatus(
       txResponse.status === rpc.Api.GetTransactionStatus.FAILED ||
       (txResponse.status as string) === 'FAILED'
     ) {
-      const errorDetail = (txResponse as rpc.Api.GetFailedTransactionResponse).resultXdr
-        ? ` (resultXdr: ${(txResponse as rpc.Api.GetFailedTransactionResponse).resultXdr.toXDR('base64')})`
+      const failed = txResponse as rpc.Api.GetFailedTransactionResponse;
+      const errorDetail = failed.resultXdr
+        ? ` (resultXdr: ${failed.resultXdr.toXDR('base64')})`
         : '';
       throw new Error(`Transaction failed on-chain: ${txHash}${errorDetail}`);
     }
@@ -407,9 +407,7 @@ export async function pollTransactionStatus(
 export async function getLatestLedger(): Promise<number> {
   try {
     const response = await withRpcRetry('getLatestLedger', () =>
-      withRpcTimeout('getLatestLedger', () =>
-        executeRpc('getLatestLedger', (server) => server.getLatestLedger()),
-      ),
+      withRpcTimeout('getLatestLedger', () => executeRpc('getLatestLedger', (server) => server.getLatestLedger())),
     );
     return Number(response.sequence);
   } catch (err) {
@@ -905,15 +903,15 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
       case 'scvI128':
         return decodeI128(retval);
       case 'scvU64':
-        return (retval as xdr.ScValU64).u64.toString();
+        return retval.u64.toString();
       case 'scvU32':
-        return (retval as xdr.ScValU32).u32.toString();
+        return retval.u32.toString();
       case 'scvI64':
-        return (retval as xdr.ScValI64).i64.toString();
+        return retval.i64.toString();
       case 'scvU128': {
-        const parts = (retval as xdr.ScValU128).u128;
-        const hi = BigInt.asUintN(64, BigInt(parts.hi.toString()));
-        const lo = BigInt.asUintN(64, BigInt(parts.lo.toString()));
+        const parts = retval.u128;
+        const hi = BigInt.asUintN(64, parts.hi);
+        const lo = BigInt.asUintN(64, parts.lo);
         return ((hi << 64n) | lo).toString();
       }
       default:
@@ -957,9 +955,7 @@ export async function simulateStreamAction(
   let sourceAccount: Account;
   try {
     sourceAccount = await withRpcRetry('getAccount', () =>
-      withRpcTimeout('getAccount', () =>
-        executeRpc('getAccount', (server) => server.getAccount(senderPublicKey)),
-      ),
+      withRpcTimeout('getAccount', () => executeRpc('getAccount', (server) => server.getAccount(senderPublicKey))),
     );
   } catch (err) {
     logger.warn(
@@ -982,9 +978,7 @@ export async function simulateStreamAction(
   const tx = builder.setTimeout(TX_TIMEOUT_SECONDS).build();
 
   const simulation = await withRpcRetry('simulateTransaction', () =>
-    withRpcTimeout('simulateTransaction', () =>
-      executeRpc('simulateTransaction', (server) => server.simulateTransaction(tx)),
-    ),
+    withRpcTimeout('simulateTransaction', () => executeRpc('simulateTransaction', (server) => server.simulateTransaction(tx))),
   );
 
   if (rpc.Api.isSimulationError(simulation)) {

@@ -77,16 +77,21 @@ function simulationError(error: string): rpc.Api.SimulateTransactionErrorRespons
  */
 function invokedOps(tx: Transaction): Array<{ contractHex: string; fn: string; args: xdr.ScVal[] }> {
   return tx.operations.map((op) => {
-    const body = op.body as xdr.OperationBodyInvokeHostFunction;
-    const hostFn = body.invokeHostFunctionOp.hostFunction as xdr.HostFunctionInvokeContract;
-    const ico = hostFn.invokeContract;
-    const contractAddress = ico.contractAddress as xdr.ScAddressContract;
+    const ico = (op as unknown as { func: { invokeContract: InvokeContractArgsLike } }).func
+      .invokeContract;
     return {
-      contractHex: Buffer.from(contractAddress.contractId.value).toString('hex'),
+      contractHex: Buffer.from(ico.contractAddress.contractId.value).toString('hex'),
       fn: ico.functionName.toString(),
       args: ico.args,
     };
   });
+}
+
+/** The marshalled `InvokeContractArgs` shape carried by `func.invokeContract`. */
+interface InvokeContractArgsLike {
+  contractAddress: { contractId: { value: Uint8Array } };
+  functionName: { toString(): string };
+  args: xdr.ScVal[];
 }
 
 /** Hex form of a contract address, for comparison against a StrKey contract. */
@@ -96,11 +101,13 @@ function contractHex(address: string): string {
 
 /** Decode a returned envelope and assert it carries no signatures. */
 function expectUnsignedEnvelope(unsignedXdr: string): xdr.Transaction {
-  const envelope = xdr.TransactionEnvelope.fromXDR(unsignedXdr, 'base64');
+  const envelope = xdr.TransactionEnvelope.fromXDR(
+    unsignedXdr,
+    'base64',
+  ) as xdr.TransactionEnvelopeTx;
   expect(envelope.type).toBe('envelopeTypeTx');
-  const v1 = (envelope as xdr.TransactionEnvelopeTx).v1;
-  expect(v1.signatures).toHaveLength(0);
-  return v1.tx;
+  expect(envelope.v1.signatures).toHaveLength(0);
+  return envelope.v1.tx;
 }
 
 function lastSimulatedTx(): Transaction {

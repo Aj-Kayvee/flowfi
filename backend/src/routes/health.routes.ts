@@ -79,12 +79,15 @@ router.get('/', async (_req: Request, res: Response) => {
     }
   }
 
+  // 503 only when: DB is down, OR the indexer is enabled and its state row is
+  // stale (lag > 60). A missing state row (lag === -1) is a cold-start
+  // condition, not a failure, even when the indexer is enabled.
   const eventCounters = sorobanEventWorker.getEventCounters();
 
-  // 503 when: DB is down, OR the indexer is enabled and its state row is
-  // stale (lag > 60), OR recent event-processing failures are spiking.
-  // A missing state row (lag === -1) is a cold-start condition, not a failure,
-  // even when the indexer is enabled.
+  // 503 when: DB is down, OR the indexer is enabled and its state row is stale
+  // (lag > 60), OR recent event-processing failures are spiking. A missing state
+  // row (lag === -1) is a cold-start condition, not a failure, even when the
+  // indexer is enabled.
   const indexerLagDegraded = indexerEnabled && indexerLag > 60;
   const indexerFailureDegraded = indexerEnabled && eventCounters.degraded;
   const isHealthy =
@@ -94,7 +97,11 @@ router.get('/', async (_req: Request, res: Response) => {
   // Redis is optional (single-instance SSE mode falls back gracefully when it's
   // absent), so its status never affects the top-level `isHealthy` verdict.
   const redisConfigured = !!process.env.REDIS_URL;
-  const redisStatus = !redisConfigured ? 'not_configured' : isRedisAvailable() ? 'ok' : 'unavailable';
+  const redisStatus = !redisConfigured
+    ? 'not_configured'
+    : isRedisAvailable()
+      ? 'ok'
+      : 'unavailable';
 
   // Soroban RPC reachability is reported for observability only — it does not
   // gate liveness, since a transient RPC blip shouldn't take the service down.
@@ -109,6 +116,10 @@ router.get('/', async (_req: Request, res: Response) => {
     db: dbStatus,
     indexerEnabled,
     indexerLag: indexerLag === -1 ? null : indexerLag,
+    eventsProcessed: eventCounters.eventsProcessed,
+    eventsFailed: eventCounters.eventsFailed,
+    lastErrorAt: eventCounters.lastErrorAt,
+    indexerDegraded: eventCounters.degraded,
     // Ledger-level lag, which is what `flowfi_indexer_lag_ledgers` tracks.
     // Null when the network tip could not be resolved.
     indexerLedgerLag:
