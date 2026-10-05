@@ -56,30 +56,39 @@ impl ReentrantFeeToken {
 }
 
 #[test]
-fn test_fee_is_deducted_and_stream_persists_on_create_and_top_up() {
+fn test_fee_transfer_observes_persisted_stream_on_create_and_top_up() {
     let env = Env::default();
     env.mock_all_auths();
-    let (token, _admin) = create_token(&env);
+    let token = env.register(ReentrantFeeToken, ());
     let client = create_contract(&env);
+    env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "stream_contract"), &client.address);
+    });
 
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let treasury = Address::generate(&env);
-    mint(&env, &token, &sender, 2_000);
-    client.initialize(&Address::generate(&env), &treasury, &500);
+    client.initialize(&Address::generate(&env), &token, &500);
 
     let stream_id = client.create_stream(&sender, &recipient, &token, &1_000, &100);
     assert_eq!(stream_id, 1);
-    assert_eq!(client.get_stream(&stream_id).unwrap().deposited_amount, 950);
+    let observed_create_deposit: i128 = env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "observed_deposit"))
+            .unwrap()
+    });
+    assert_eq!(observed_create_deposit, 950);
 
     client.top_up_stream(&sender, &stream_id, &500);
-    assert_eq!(
-        client.get_stream(&stream_id).unwrap().deposited_amount,
-        1_425
-    );
-
-    // 5% of 1_000 plus 5% of 500 is withheld to the treasury.
-    assert_eq!(token::Client::new(&env, &token).balance(&treasury), 75);
+    let observed_top_up_deposit: i128 = env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "observed_deposit"))
+            .unwrap()
+    });
+    assert_eq!(observed_top_up_deposit, 1_425);
 }
 // NOTE: fee-transfer CEI (persist before transfer) is verified via
 // post-call state/events, not via re-entrant callback: Soroban hosts
@@ -2369,9 +2378,6 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
             } else {
                 StreamStatus::Active
             },
-            arbiter: None,
-            dispute_status: DisputeStatus::None,
-            is_allowance_based: false,
         };
 
         let claimable = StreamContract::calculate_claimable(&stream, elapsed);
@@ -4582,8 +4588,6 @@ fn raw_stream_field_count(env: &Env, contract: &Address, stream_id: u64) -> u32 
 
 /// True when the raw record at `stream_id` decodes as the current [`Stream`].
 fn stream_record_is_current_shape(env: &Env, contract: &Address, stream_id: u64) -> bool {
-    // `Stream` carries the `schedule` and `cliff_time` fields; `LegacyStream`
-    // carries neither.
     // The current `Stream` shape is 17 fields: `LegacyStream` carries neither
     // `schedule`/`cliff_time` nor the dispute/allowance fields.
     // `Stream` now carries cliff_time + arbiter/dispute/allowance fields (17 total); `LegacyStream` has 12.

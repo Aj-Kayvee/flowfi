@@ -9,10 +9,7 @@ type ScheduleFormData = Pick<
   "duration" | "durationUnit" | "descriptionTag" | "memo"
 >;
 
-// The props mirror the shared form hook, so this step edits the same model the
-// wizard validates and submits rather than a local copy of it.
 interface ScheduleStepProps {
-  formData: StreamFormData;
   formData: ScheduleFormData;
   errors: StreamFormErrors;
   onUpdate: (data: Partial<StreamFormData>) => void;
@@ -22,8 +19,6 @@ const MAX_MEMO_BYTES = 28;
 
 export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) {
   const memo = formData.memo || "";
-  // Derived during render instead of mirrored into state from an effect.
-  const memoByteCount = useMemo(() => new TextEncoder().encode(memo).length, [memo]);
   // UTF-8 byte length, derived during render rather than stored in state.
   const memoByteCount = useMemo(
     () => new TextEncoder().encode(memo).length,
@@ -58,7 +53,6 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
             <select
               value={formData.durationUnit}
               onChange={(e) =>
-                onUpdate({ durationUnit: e.target.value as StreamFormData["durationUnit"] })
                 onUpdate({
                   durationUnit: e.target.value as StreamFormData["durationUnit"],
                 })

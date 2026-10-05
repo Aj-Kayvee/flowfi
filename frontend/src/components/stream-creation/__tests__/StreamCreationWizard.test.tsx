@@ -40,8 +40,6 @@ vi.mock("../../wallet/MultisigSignModal", () => ({
 
 vi.mock("@/lib/stellar", () => ({
   isValidStellarPublicKey: vi.fn((val: string) => /^G[A-Z2-7]{55}$/.test(val)),
-vi.mock("@/lib/soroban", () => ({
-  fetchTokenBalanceDisplay: vi.fn().mockResolvedValue("10000"),
 }));
 
 vi.mock("@/utils/amount", () => {
@@ -139,9 +137,6 @@ vi.mock("../ScheduleStep", () => ({
     errors,
     onUpdate,
   }: {
-    formData: { duration: string; memo?: string };
-    errors: { duration?: string };
-    onUpdate: (data: { duration?: string }) => void;
     formData: { duration: string; durationUnit?: string; descriptionTag?: string; memo?: string };
     errors: Record<string, string | undefined>;
     onUpdate: (data: { duration?: string; durationUnit?: string }) => void;
