@@ -81,14 +81,6 @@ vi.mock("@/hooks/useStreamingAmount", () => ({
   useStreamingAmount: mockUseStreamingAmount,
 }));
 
-// `useTokenPrice` is a react-query hook; the details page is rendered here
-// without the app's QueryClientProvider, so stub only the hook and keep the
-// pure conversion/formatting helpers real.
-vi.mock("@/hooks/useTokenPrice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks/useTokenPrice")>();
-  return { ...actual, useTokenPrice: () => ({ data: undefined }) };
-});
-
 vi.mock("@/lib/soroban", () => mockSoroban);
 
 vi.mock("@/components/stream-creation/CancelConfirmModal", () => ({
@@ -180,7 +172,6 @@ describe("StreamDetailsContent loading skeleton", () => {
         ok: true,
         json: async () => ({ events: [], total: 0 }),
       } as Response)
-      // The receipt-lookup effect issues a second events request.
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ events: [], total: 0 }),
@@ -199,8 +190,6 @@ describe("StreamDetailsContent loading skeleton", () => {
     // Skeleton should be gone
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
 
-    // Stream-specific content should be visible (the id appears in both the
-    // breadcrumb and the page heading).
     // Stream-specific content should be visible
     expect(screen.getAllByText(/stream #42/i).length).toBeGreaterThanOrEqual(1);
   });
@@ -258,7 +247,6 @@ describe("StreamDetailsContent loading skeleton", () => {
         ok: true,
         json: async () => ({ events: [], total: 0 }),
       } as Response)
-      // The receipt-lookup effect issues a second events request.
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ events: [], total: 0 }),
@@ -290,7 +278,6 @@ async function renderLoaded(streamOverrides: Record<string, unknown> = {}) {
       ok: true,
       json: async () => ({ events: [], total: 0 }),
     } as Response)
-    // The receipt-lookup effect issues a second events request.
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({ events: [], total: 0 }),

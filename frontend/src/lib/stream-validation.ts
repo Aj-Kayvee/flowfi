@@ -44,8 +44,6 @@ export interface StreamFormData {
    * limit; it is not otherwise validated.
    */
   memo?: string;
-  /** Optional Stellar memo (max 28 UTF-8 bytes) attached to the stream. */
-  memo?: string;
 }
 
 /**

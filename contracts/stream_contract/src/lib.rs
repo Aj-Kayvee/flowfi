@@ -2008,19 +2008,6 @@ impl StreamContract {
         let stream_id = next_stream_id(&env);
         let start_time = env.ledger().timestamp();
 
-        // Check allowance: just verify it's callable, don't lock it yet.
-        // Try to get allowance to validate approval was made
-        match env.try_invoke_contract::<i128, soroban_sdk::InvokeError>(
-            &token_address,
-            &Symbol::new(&env, "allowance"),
-            vec![
-                &env,
-                sender.to_val(),
-                env.current_contract_address().to_val(),
-            ],
-        ) {
-            Ok(Ok(allowance)) if allowance > 0 => {}
-            _ => return Err(StreamError::AllowanceLocked),
         // Check allowance: just verify it's callable, don't lock it yet
         let token_client = token::Client::new(&env, &token_address);
         // Use the generated client: avoids manual Val conversion for try_invoke.

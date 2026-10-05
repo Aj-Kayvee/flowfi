@@ -911,9 +911,6 @@ export function DashboardView({ session, onDisconnect }: DashboardViewProps) {
           incomingStreams={filteredIncoming}
           onWithdraw={handleIncomingWithdraw}
           withdrawingStreamId={withdrawingIncomingStreamId}
-          onBatchClaimSuccess={async () => {
-            await refetchSnapshot();
-          }}
           onOpenBatchClaim={() => setShowBatchClaim(true)}
           onBatchClaimSuccess={() => {
             void refetchSnapshot();
