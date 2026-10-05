@@ -71,9 +71,9 @@ function simulationError(error: string): rpc.Api.SimulateTransactionErrorRespons
 /**
  * Extract the invoke args from the transaction handed to the RPC mock.
  *
- * `Transaction.operations` exposes marshalled attribute objects, so the
- * contract call is reached via `func.invokeContract()` and its fields are read
- * through `contractAddress()` / `functionName()` / `args()`.
+ * `Transaction.operations` exposes marshalled operation bodies, so the contract
+ * call is reached via `body.invokeHostFunctionOp.hostFunction.invokeContract`
+ * and its fields are read as plain properties.
  */
 function invokedOps(tx: Transaction): Array<{ contractHex: string; fn: string; args: xdr.ScVal[] }> {
   return tx.operations.map((op) => {
