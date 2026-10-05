@@ -34,6 +34,8 @@ mod storage;
 mod types;
 
 #[cfg(test)]
+mod acceptance_tests;
+#[cfg(test)]
 mod property_tests;
 #[cfg(test)]
 mod test;
