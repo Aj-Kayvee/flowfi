@@ -5774,3 +5774,352 @@ fn test_batch_withdraw_never_exceeds_escrow_across_many_streams() {
     assert_eq!(balances.balance(&recipient), 10_000);
     assert_eq!(balances.balance(&contract), 0, "escrow not fully drained");
 }
+
+// ─── Coverage: modify_rate (#1316) ──────────────────────────────────────────
+
+#[test]
+fn test_coverage_modify_rate_recomputes_end_time_and_emits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+
+    let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
+
+    let new_end = client.modify_rate(&sender, &id, &2);
+
+    // 1_000 remaining at 2/s → 500s projected end, from the current timestamp.
+    let now = env.ledger().timestamp();
+    assert_eq!(new_end, now + 500);
+    let stream = client.get_stream(&id).unwrap();
+    assert_eq!(stream.rate_per_second, 2);
+    assert_eq!(stream.last_update_time, now);
+}
+
+#[test]
+fn test_coverage_modify_rate_rejects_non_linear_schedule() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+
+    let steps = step_schedule(&env, &[(100, 500), (200, 500)]);
+    let id = client.create_step_vesting_stream(&sender, &recipient, &token, &1_000, &steps);
+
+    let result = client.try_modify_rate(&sender, &id, &2_000);
+    assert_eq!(result, Err(Ok(StreamError::RateModificationUnsupported)));
+}
+
+// ─── Coverage: allowance streams (#1318) ───────────────────────────────────
+
+#[test]
+fn test_coverage_create_allowance_stream_gates_on_allowance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    // No allowance yet → creation is rejected.
+    let result = client.try_create_allowance_stream(&sender, &recipient, &token, &1_000);
+    assert_eq!(result, Err(Ok(StreamError::AllowanceLocked)));
+
+    // Approve the contract as spender, then creation succeeds.
+    token::Client::new(&env, &token).approve(
+        &sender,
+        &client.address,
+        &10_000,
+        &(env.ledger().sequence() + 1_000),
+    );
+    let id = client.create_allowance_stream(&sender, &recipient, &token, &1_000);
+
+    let stream = client.get_stream(&id).unwrap();
+    assert!(stream.is_allowance_based);
+    assert_eq!(stream.deposited_amount, 0);
+    assert_eq!(stream.rate_per_second, 1);
+    assert_eq!(stream.status, StreamStatus::Active);
+}
+
+// ─── Coverage: dispute & escrow (#1319) ────────────────────────────────────
+
+/// Seeds an arbiter directly on the stream's storage. The arbiter slot is
+/// intentionally immutable through the public API, so tests reach in the same
+/// way the escrow deployment flow would.
+fn seed_arbiter(env: &Env, client: &StreamContractClient, stream_id: u64, arbiter: &Address) {
+    let mut stream = client.get_stream(&stream_id).unwrap();
+    stream.arbiter = Some(arbiter.clone());
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&types::DataKey::Stream(stream_id), &stream);
+    });
+}
+
+#[test]
+fn test_coverage_dispute_request_then_rejected_resolution() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let arbiter = Address::generate(&env);
+    mint(&env, &token, &sender, 2_000);
+
+    // Both streams are created before the arbiter is seeded below: creation
+    // re-validates the token contract cross-contract, which must not run
+    // after direct storage injection.
+    let no_arbiter_id = client.create_stream(&sender, &recipient, &token, &100, &100);
+    let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
+    seed_arbiter(&env, &client, id, &arbiter);
+
+    // Without an arbiter a dispute cannot even be requested.
+    let result = client.try_request_dispute(&sender, &no_arbiter_id);
+    assert_eq!(result, Err(Ok(StreamError::DisputeNotSupported)));
+
+    client.request_dispute(&sender, &id);
+    assert_eq!(
+        client.get_stream(&id).unwrap().dispute_status,
+        DisputeStatus::Requested
+    );
+
+    // A non-arbiter cannot resolve; the arbiter rejects; the stream stays
+    // active with the dispute recorded as resolved(false).
+    let result = client.try_resolve_dispute(&Address::generate(&env), &id, &true);
+    assert_eq!(result, Err(Ok(StreamError::NotArbiter)));
+
+    client.resolve_dispute(&arbiter, &id, &false);
+    let stream = client.get_stream(&id).unwrap();
+    assert_eq!(stream.dispute_status, DisputeStatus::Resolved(false));
+    assert!(stream.is_active);
+    assert_eq!(
+        token::Client::new(&env, &token).balance(&client.address),
+        1_100
+    );
+}
+
+#[test]
+fn test_coverage_dispute_approved_resolution_cancels_and_distributes() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let arbiter = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+
+    let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
+    seed_arbiter(&env, &client, id, &arbiter);
+
+    advance(&env, 500);
+    client.request_dispute(&sender, &id);
+    client.resolve_dispute(&arbiter, &id, &true);
+
+    // Resolution pays accrued 500 to the recipient and refunds 500 to the
+    // sender, then terminates the stream.
+    let balances = token::Client::new(&env, &token);
+    assert_eq!(balances.balance(&recipient), 500);
+    assert_eq!(balances.balance(&sender), 500);
+    assert_eq!(balances.balance(&client.address), 0);
+
+    let stream = client.get_stream(&id).unwrap();
+    assert_eq!(stream.status, StreamStatus::Cancelled);
+    assert!(!stream.is_active);
+    assert_eq!(stream.dispute_status, DisputeStatus::Resolved(true));
+}
+
+// ─── Coverage: close_stream ────────────────────────────────────────────────
+
+#[test]
+fn test_coverage_close_stream_prunes_fully_withdrawn_stream() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+
+    let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
+
+    // Active streams cannot be pruned.
+    let result = client.try_close_stream(&sender, &id);
+    assert_eq!(result, Err(Ok(StreamError::StreamStillActive)));
+
+    advance(&env, 1_000);
+    client.withdraw(&recipient, &id);
+    assert!(client.is_stream_completed(&id));
+
+    client.close_stream(&sender, &id);
+    assert!(client.get_stream(&id).is_none());
+
+    // Already-pruned streams are gone for good.
+    let result = client.try_close_stream(&sender, &id);
+    assert_eq!(result, Err(Ok(StreamError::StreamNotFound)));
+}
+
+// ─── Coverage: conditional streams & milestones (#1482) ────────────────────
+
+/// Minimal SEP-40-style price oracle used to exercise `PriceTarget`
+/// milestones' cross-contract `lastprice` calls.
+#[contract]
+pub struct TestOracle;
+
+use soroban_sdk::{contract, contractimpl};
+
+#[contractimpl]
+impl TestOracle {
+    /// Seeds (or clears, with `None`) the single oracle reading.
+    pub fn set_reading(env: Env, reading: Option<types::PriceData>) {
+        env.storage().instance().set(&0u32, &reading);
+    }
+
+    pub fn lastprice(env: Env, _asset: types::OracleAsset) -> Option<types::PriceData> {
+        env.storage().instance().get(&0u32).unwrap_or(None)
+    }
+}
+
+#[test]
+fn test_coverage_conditional_stream_timeonly_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+
+    let milestones = vec![
+        &env,
+        ConditionalMilestone {
+            milestone_id: 1,
+            amount: 600,
+            condition: UnlockCondition::TimeOnly(200),
+            is_unlocked: false,
+        },
+        ConditionalMilestone {
+            milestone_id: 2,
+            amount: 400,
+            condition: UnlockCondition::TimeOnly(500),
+            is_unlocked: false,
+        },
+    ];
+
+    let id = client.create_conditional_stream(&sender, &recipient, &token, &1_000, &milestones);
+
+    // The whole gross amount sits in escrow; tranches stay time-locked.
+    assert_eq!(
+        token::Client::new(&env, &token).balance(&client.address),
+        1_000
+    );
+
+    // Verifying an unknown milestone id is rejected.
+    let result = client.try_verify_and_unlock_milestone(&recipient, &id, &99);
+    assert_eq!(result, Err(Ok(StreamError::InvalidMilestone)));
+
+    // Not-yet-due milestone does not unlock.
+    let result = client.try_verify_and_unlock_milestone(&recipient, &id, &1);
+    assert_eq!(result, Err(Ok(StreamError::ConditionNotMet)));
+
+    advance(&env, 200);
+    client.verify_and_unlock_milestone(&recipient, &id, &1);
+
+    // Double-verification is rejected...
+    let result = client.try_verify_and_unlock_milestone(&recipient, &id, &1);
+    assert_eq!(result, Err(Ok(StreamError::MilestoneAlreadyUnlocked)));
+
+    // ...and the unlocked tranche is immediately claimable (600 so far).
+    assert_eq!(client.get_claimable_amount(&id).unwrap(), 600);
+
+    // Neither party other than sender/recipient may verify.
+    let result = client.try_verify_and_unlock_milestone(&Address::generate(&env), &id, &2);
+    assert_eq!(result, Err(Ok(StreamError::MilestoneCallerUnauthorized)));
+
+    advance(&env, 300);
+    client.verify_and_unlock_milestone(&sender, &id, &2);
+    assert_eq!(client.get_claimable_amount(&id).unwrap(), 1_000);
+
+    let withdrawn = client.withdraw(&recipient, &id);
+    assert_eq!(withdrawn, 1_000);
+    assert!(client.is_stream_completed(&id));
+}
+
+#[test]
+fn test_coverage_conditional_stream_price_target_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let client = create_contract(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let oracle_id = env.register(TestOracle, ());
+    mint(&env, &token, &sender, 1_000);
+
+    let milestones = vec![
+        &env,
+        ConditionalMilestone {
+            milestone_id: 1,
+            amount: 1_000,
+            condition: UnlockCondition::PriceTarget(oracle_id.clone(), 500, true),
+            is_unlocked: false,
+        },
+    ];
+    let id = client.create_conditional_stream(&sender, &recipient, &token, &1_000, &milestones);
+
+    // Move past the freshness window so the stale-reading case is testable.
+    advance(&env, 7_200);
+
+    // No reading at all → OraclePriceUnavailable.
+    let result = client.try_verify_and_unlock_milestone(&recipient, &id, &1);
+    assert_eq!(result, Err(Ok(StreamError::OraclePriceUnavailable)));
+
+    // A reading older than the freshness window → OraclePriceStale.
+    env.as_contract(&oracle_id, || {
+        TestOracle::set_reading(
+            env.clone(),
+            Some(types::PriceData {
+                price: 600,
+                timestamp: env.ledger().timestamp().saturating_sub(4_000),
+            }),
+        );
+    });
+    let result = client.try_verify_and_unlock_milestone(&recipient, &id, &1);
+    assert_eq!(result, Err(Ok(StreamError::OraclePriceStale)));
+
+    // Fresh price below the target → ConditionNotMet.
+    env.as_contract(&oracle_id, || {
+        TestOracle::set_reading(
+            env.clone(),
+            Some(types::PriceData {
+                price: 499,
+                timestamp: env.ledger().timestamp(),
+            }),
+        );
+    });
+    let result = client.try_verify_and_unlock_milestone(&recipient, &id, &1);
+    assert_eq!(result, Err(Ok(StreamError::ConditionNotMet)));
+
+    // Fresh price at the target (>=) → unlock, then withdraw.
+    env.as_contract(&oracle_id, || {
+        TestOracle::set_reading(
+            env.clone(),
+            Some(types::PriceData {
+                price: 500,
+                timestamp: env.ledger().timestamp(),
+            }),
+        );
+    });
+    client.verify_and_unlock_milestone(&recipient, &id, &1);
+
+    let withdrawn = client.withdraw(&recipient, &id);
+    assert_eq!(withdrawn, 1_000);
+    assert!(client.is_stream_completed(&id));
+}
