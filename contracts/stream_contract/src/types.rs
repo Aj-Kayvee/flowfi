@@ -8,6 +8,10 @@ use soroban_sdk::{contractclient, contracttype, Address, BytesN, Env, Vec};
 /// The asset argument mirrors the SEP-40 `Asset` wire shape as its own
 /// contracttype so the generated invocation matches oracle deployments
 /// without pulling SDK type differences into our ABI.
+// The trait itself is never implemented or named directly — `#[contractclient]`
+// consumes it to generate `OracleClient`, which lib.rs invokes. rustc's
+// dead-code pass doesn't credit that generated usage, so silence the lint.
+#[allow(dead_code)]
 #[contractclient(name = "OracleClient")]
 pub trait PriceOracle {
     /// Last recorded price for `asset`, or `None` when the oracle has none.
