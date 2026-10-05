@@ -49,6 +49,9 @@ export function transactionSuccessToast(
   playTransactionSuccessSound();
   // Pass options only when present: `toast.success(message, undefined)` would
   // still be a two-argument call and defeats option-less callers/tests.
+  // Only forward options when they exist: `toast.success(msg, undefined)` is
+  // equivalent at runtime, but the explicit second argument breaks callers
+  // (and tests) that match against the single-argument call.
   return options ? toast.success(message, options) : toast.success(message);
 }
 
