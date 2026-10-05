@@ -12,7 +12,13 @@ if (!globalForPrisma.pool) {
   globalForPrisma.pool = createPgPool();
 }
 
-const adapter = new PrismaPg(globalForPrisma.pool as Parameters<typeof PrismaPg>[0]);
+// `@prisma/adapter-pg` pulls in its own copy of `@types/pg`, so its `pg.Pool`
+// parameter type is structurally distinct from the one this module resolves
+// even though both describe the same runtime class. Bridge the two nominal
+// copies through `unknown`; the object handed over is the pool we created.
+const adapter = new PrismaPg(
+  globalForPrisma.pool as unknown as ConstructorParameters<typeof PrismaPg>[0],
+);
 
 export const prisma =
   globalForPrisma.prisma ||

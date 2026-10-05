@@ -192,19 +192,6 @@ async function executeRpc<T>(label: string, operation: (server: rpc.Server) => P
   return rpcPool.execute(label, (server, _signal) => operation(server));
 }
 
-/** Returns the active test server or falls back to the pool (alias for executeRpc convenience). */
-function getServer(): rpc.Server {
-  if (_server) return _server;
-  // Return a proxy-like object that routes each call through the pool.
-  // This allows existing `getServer().method()` call sites to work without refactoring.
-  return new Proxy({} as rpc.Server, {
-    get(_target, prop: string) {
-      return (...args: unknown[]) =>
-        rpcPool.execute(prop, (server) => (server as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[prop]?.(...args) as Promise<unknown>);
-    },
-  });
-}
-
 /**
  * Lightweight connectivity check used by the /health endpoint.
  * Calls the RPC server's getHealth() with a bounded timeout so a slow or
@@ -401,7 +388,7 @@ export async function getLatestLedger(): Promise<number> {
   }
 }
 
-export async function getStreamFromChain(streamId: number): Promise<ChainStream | null> {
+export async function getStreamFromChain(streamId: bigint): Promise<ChainStream | null> {
   if (!getContractId()) return null;
 
   try {
@@ -867,10 +854,10 @@ function readResourceFootprint(
 ): { cpuInstructions: number; memoryBytes: number } {
   try {
     const data = transactionData.build();
-    const resources = data.resources();
+    const resources = data.resources;
     return {
-      cpuInstructions: Number(resources.instructions()),
-      memoryBytes: Number(resources.writeBytes()),
+      cpuInstructions: Number(resources.instructions),
+      memoryBytes: Number(resources.writeBytes),
     };
   } catch (err) {
     logger.warn('[SorobanService] Could not read resource footprint from simulation:', err);
@@ -884,19 +871,21 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
   if (!retval) return '';
 
   try {
-    switch (retval.switch().value) {
-      case xdr.ScValType.scvI128().value:
+    // SDK 17 models ScVal as a discriminated union on `type`, with the arm
+    // payloads exposed as plain properties rather than accessor methods.
+    switch (retval.type) {
+      case 'scvI128':
         return decodeI128(retval);
-      case xdr.ScValType.scvU64().value:
-        return retval.u64().toString();
-      case xdr.ScValType.scvU32().value:
-        return retval.u32().toString();
-      case xdr.ScValType.scvI64().value:
-        return retval.i64().toString();
-      case xdr.ScValType.scvU128().value: {
-        const parts = retval.u128();
-        const hi = BigInt.asUintN(64, BigInt(parts.hi().toString()));
-        const lo = BigInt.asUintN(64, BigInt(parts.lo().toString()));
+      case 'scvU64':
+        return retval.u64.toString();
+      case 'scvU32':
+        return retval.u32.toString();
+      case 'scvI64':
+        return retval.i64.toString();
+      case 'scvU128': {
+        const parts = retval.u128;
+        const hi = BigInt.asUintN(64, BigInt(parts.hi.toString()));
+        const lo = BigInt.asUintN(64, BigInt(parts.lo.toString()));
         return ((hi << 64n) | lo).toString();
       }
       default:
