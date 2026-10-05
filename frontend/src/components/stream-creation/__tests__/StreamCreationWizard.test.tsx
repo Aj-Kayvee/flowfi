@@ -117,9 +117,9 @@ vi.mock("../ScheduleStep", () => ({
     errors,
     onUpdate,
   }: {
-    formData: { duration: string };
+    formData: { duration: string; durationUnit?: string; descriptionTag?: string; memo?: string };
     errors: Record<string, string | undefined>;
-    onUpdate: (d: { duration?: string }) => void;
+    onUpdate: (data: { duration?: string; durationUnit?: string }) => void;
   }) => (
     <div data-testid="schedule-step">
       <input

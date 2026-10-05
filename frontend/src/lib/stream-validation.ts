@@ -37,7 +37,7 @@ export interface StreamFormData {
   duration: string;
   durationUnit: DurationUnit;
   descriptionTag?: string;
-  /** Optional 28-byte Stellar memo attached to the stream transaction. */
+  /** Optional Stellar memo (max 28 UTF-8 bytes) attached to the stream. */
   memo?: string;
 }
 

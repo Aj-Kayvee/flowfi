@@ -4,12 +4,15 @@ import React, { useState } from 'react';
 import type { Stream } from '@/lib/dashboard';
 import { useStreamingAmount } from '@/hooks/useStreamingAmount';
 import toast from 'react-hot-toast';
+import { transactionSuccessToast } from '@/lib/transaction-feedback';
 
 
 interface IncomingStreamsProps {
     streams: Stream[];
     onWithdraw: (stream: Stream) => Promise<void>;
     withdrawingStreamId?: string | null;
+    /** Stream highlighted by keyboard navigation (j/k). */
+    selectedStreamId?: string | null;
 }
 
 /**
@@ -89,6 +92,7 @@ const IncomingStreams: React.FC<IncomingStreamsProps> = ({
     streams,
     onWithdraw,
     withdrawingStreamId = null,
+    selectedStreamId = null,
 }) => {
     const [filter, setFilter] = useState<'All' | 'Active' | 'Completed' | 'Paused'>('All');
 
@@ -103,7 +107,7 @@ const IncomingStreams: React.FC<IncomingStreamsProps> = ({
     const handleWithdraw = async (stream: Stream) => {
         try {
             await onWithdraw(stream);
-            toast.success(`Successfully withdrew from stream #${stream.id}`);
+            transactionSuccessToast(`Successfully withdrew from stream #${stream.id}`);
         } catch {
             toast.error(`Failed to withdraw from stream #${stream.id}`);
         }
@@ -159,10 +163,13 @@ const IncomingStreams: React.FC<IncomingStreamsProps> = ({
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {filteredStreams.map((stream) => {
                                 const isPaused = stream.status === 'Paused';
+                                const isSelected = selectedStreamId === stream.id;
                                 return (
                                     <tr
                                         key={stream.id}
-                                        className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${isPaused ? 'bg-gray-50/50 dark:bg-gray-800/50 opacity-75' : ''}`}
+                                        data-stream-id={stream.id}
+                                        aria-selected={isSelected}
+                                        className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${isPaused ? 'bg-gray-50/50 dark:bg-gray-800/50 opacity-75' : ''} ${isSelected ? 'bg-accent/10 ring-1 ring-inset ring-accent/50' : ''}`}
                                     >
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className={`text-sm font-mono ${isPaused ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>

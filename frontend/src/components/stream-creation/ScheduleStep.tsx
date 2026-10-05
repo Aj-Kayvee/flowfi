@@ -19,6 +19,7 @@ const MAX_MEMO_BYTES = 28;
 
 export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) {
   const memo = formData.memo || "";
+  // UTF-8 byte length, derived during render rather than stored in state.
   const memoByteCount = useMemo(
     () => new TextEncoder().encode(memo).length,
     [memo],
