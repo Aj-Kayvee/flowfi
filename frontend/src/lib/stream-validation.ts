@@ -37,7 +37,12 @@ export interface StreamFormData {
   duration: string;
   durationUnit: DurationUnit;
   descriptionTag?: string;
-  /** Optional Stellar memo (max 28 UTF-8 bytes) attached to the stream. */
+  /**
+   * Optional free-text note attached to the stream transaction.
+   *
+   * The schedule step edits it and caps it at 28 UTF-8 bytes, the Stellar memo
+   * limit; it is not otherwise validated.
+   */
   memo?: string;
 }
 
