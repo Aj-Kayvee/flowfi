@@ -2,26 +2,28 @@
 
 import { useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
-import type { DurationUnit } from "@/lib/stream-validation";
+import type { StreamFormData, StreamFormErrors } from "@/lib/stream-validation";
+
+type ScheduleFormData = Pick<
+  StreamFormData,
+  "duration" | "durationUnit" | "descriptionTag" | "memo"
+>;
 
 interface ScheduleStepProps {
-  formData: {
-    duration: string;
-    durationUnit: DurationUnit;
-    descriptionTag?: string;
-    memo?: string;
-  };
-  errors: Record<string, string | undefined>;
-  onUpdate: (data: Partial<ScheduleStepProps["formData"]>) => void;
+  formData: ScheduleFormData;
+  errors: StreamFormErrors;
+  onUpdate: (data: Partial<StreamFormData>) => void;
 }
 
 const MAX_MEMO_BYTES = 28;
 
 export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) {
   const memo = formData.memo || "";
-
   // UTF-8 byte length, derived during render rather than stored in state.
-  const memoByteCount = useMemo(() => new TextEncoder().encode(memo).length, [memo]);
+  const memoByteCount = useMemo(
+    () => new TextEncoder().encode(memo).length,
+    [memo],
+  );
 
   const isNearLimit = memoByteCount >= MAX_MEMO_BYTES * 0.8;
   const isOverLimit = memoByteCount > MAX_MEMO_BYTES;
@@ -50,7 +52,11 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
             />
             <select
               value={formData.durationUnit}
-              onChange={(e) => onUpdate({ durationUnit: e.target.value as DurationUnit })}
+              onChange={(e) =>
+                onUpdate({
+                  durationUnit: e.target.value as StreamFormData["durationUnit"],
+                })
+              }
               className="px-4 py-3 rounded-lg bg-black/40 border border-white/10 focus:border-accent outline-none"
             >
               <option value="days">Days</option>
@@ -70,7 +76,7 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
           <input
             id="descriptionTag"
             type="text"
-            value={formData.descriptionTag}
+            value={formData.descriptionTag ?? ""}
             onChange={(e) => onUpdate({ descriptionTag: e.target.value })}
             className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 focus:border-accent outline-none"
             placeholder="e.g., salary, contractor-payment, subscription"
