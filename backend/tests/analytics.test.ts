@@ -14,12 +14,9 @@ const queryMock = vi.fn();
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
     stream: {
-      groupBy: vi.fn(),
+      findMany: vi.fn(),
     },
   },
-}));
-
-vi.mock("../src/lib/pg-pool.js", () => ({
   pool: {
     query: (...args: unknown[]) => queryMock(...args),
   },
@@ -48,15 +45,26 @@ describe("analytics service (#1480)", () => {
     // to_regclass returns null → no hypertable.
     queryMock.mockResolvedValue({ rows: [{ hypertable: null }] });
 
-    (prisma.stream.groupBy as ReturnType<typeof vi.fn>).mockResolvedValue([
+    // Amount columns are i128 strings in the schema; three active streams on
+    // one token, aggregated in JS (deposits 1,000,000 − withdrawals 400,000).
+    (prisma.stream.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         tokenAddress: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-        _count: { _all: 3 },
-        _sum: {
-          depositedAmount: BigInt(1_000_000),
-          withdrawnAmount: BigInt(400_000),
-          ratePerSecond: BigInt(50),
-        },
+        depositedAmount: "400000",
+        withdrawnAmount: "100000",
+        ratePerSecond: "20",
+      },
+      {
+        tokenAddress: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+        depositedAmount: "350000",
+        withdrawnAmount: "150000",
+        ratePerSecond: "20",
+      },
+      {
+        tokenAddress: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+        depositedAmount: "250000",
+        withdrawnAmount: "150000",
+        ratePerSecond: "10",
       },
     ]);
 
@@ -64,8 +72,8 @@ describe("analytics service (#1480)", () => {
 
     expect(snapshot.source).toBe("live");
     expect(snapshot.totalTvlStroops).toBe("600000");
-    expect(snapshot.tokens[0].activeStreamCount).toBe(3);
-    expect(snapshot.tokens[0].velocityPerSecondStroops).toBe("50");
+    expect(snapshot.tokens[0]?.activeStreamCount).toBe(3);
+    expect(snapshot.tokens[0]?.velocityPerSecondStroops).toBe("50");
   });
 
   it("reads the latest hypertable snapshot per token when TimescaleDB is present", async () => {
@@ -88,20 +96,17 @@ describe("analytics service (#1480)", () => {
     expect(snapshot.source).toBe("timescaledb");
     expect(snapshot.totalTvlStroops).toBe("900000");
     // DISTINCT ON (token_address) ... ORDER BY token_address, time DESC
-    expect(queryMock.mock.calls[1][0]).toContain("DISTINCT ON");
+    expect(queryMock.mock.calls[1]?.[0]).toContain("DISTINCT ON");
   });
 
   it("maps the snapshot into the DefiLlama adapter shape", async () => {
     queryMock.mockResolvedValue({ rows: [{ hypertable: null }] });
-    (prisma.stream.groupBy as ReturnType<typeof vi.fn>).mockResolvedValue([
+    (prisma.stream.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         tokenAddress: "TOKEN_A",
-        _count: { _all: 1 },
-        _sum: {
-          depositedAmount: BigInt(500),
-          withdrawnAmount: BigInt(200),
-          ratePerSecond: BigInt(1),
-        },
+        depositedAmount: "500",
+        withdrawnAmount: "200",
+        ratePerSecond: "1",
       },
     ]);
 
@@ -122,6 +127,10 @@ describe("analytics service (#1480)", () => {
       points: [],
     });
 
+    // The first call latched the probe result in the service cache; clear it
+    // so the timescaledb path below actually re-probes the pool.
+    resetTimescaleCacheForTests();
+
     // First call is the availability probe, second the data query.
     queryMock.mockResolvedValueOnce({ rows: [{ hypertable: "stream_flow_snapshots" }] });
     queryMock.mockResolvedValueOnce({
@@ -137,8 +146,8 @@ describe("analytics service (#1480)", () => {
     });
     const series = await getHistoricalAnalytics("90d", "1d");
     expect(series.source).toBe("timescaledb");
-    expect(series.points[0].avgTvlStroops).toBe("123");
-    expect(series.points[0].peakStreams).toBe(9);
+    expect(series.points[0]?.avgTvlStroops).toBe("123");
+    expect(series.points[0]?.peakStreams).toBe(9);
     expect(queryMock.mock.calls.at(-1)![0]).toContain("daily_protocol_metrics");
   });
 });

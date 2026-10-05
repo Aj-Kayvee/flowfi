@@ -9,8 +9,7 @@
  * endpoints stay available on stock PostgreSQL deployments.
  */
 
-import { prisma } from "../lib/prisma.js";
-import { pool } from "../lib/pg-pool.js";
+import { pool, prisma } from "../lib/prisma.js";
 import logger from "../logger.js";
 
 /** Period accepted by the historical endpoint. */
@@ -88,38 +87,58 @@ async function hasTimescale(): Promise<boolean> {
     timescaleAvailable = result.rows[0]?.hypertable !== null;
   } catch (error) {
     logger.warn(
-      { err: error },
-      "TimescaleDB analytics tables unavailable; using live aggregation"
+      "TimescaleDB analytics tables unavailable; using live aggregation:",
+      error
     );
     timescaleAvailable = false;
   }
   return timescaleAvailable;
 }
 
-/** Live fallback: aggregate active streams straight from Prisma. */
+/**
+ * Live fallback: aggregate active streams straight from Prisma.
+ *
+ * Amount columns are i128-preserved strings in the schema, so Prisma's
+ * `_sum` aggregation does not apply to them; rows are summed in JS with
+ * `BigInt` instead to keep the full precision end to end.
+ */
 async function liveTvl(): Promise<TvlSnapshot> {
-  const grouped = await prisma.stream.groupBy({
-    by: ["tokenAddress"],
+  const streams = await prisma.stream.findMany({
     where: { isActive: true },
-    _count: { _all: true },
-    _sum: {
+    select: {
+      tokenAddress: true,
       depositedAmount: true,
       withdrawnAmount: true,
       ratePerSecond: true,
     },
   });
 
-  const tokens: TokenTvl[] = grouped.map((g) => {
-    const deposited = BigInt(g._sum.depositedAmount ?? 0);
-    const withdrawn = BigInt(g._sum.withdrawnAmount ?? 0);
-    const locked = deposited > withdrawn ? deposited - withdrawn : 0n;
-    return {
-      tokenAddress: g.tokenAddress,
-      totalLockedStroops: locked.toString(),
-      velocityPerSecondStroops: BigInt(g._sum.ratePerSecond ?? 0).toString(),
-      activeStreamCount: g._count._all,
+  const byToken = new Map<
+    string,
+    { locked: bigint; velocity: bigint; count: number }
+  >();
+  for (const stream of streams) {
+    const deposited = BigInt(stream.depositedAmount);
+    const withdrawn = BigInt(stream.withdrawnAmount);
+    const entry = byToken.get(stream.tokenAddress) ?? {
+      locked: 0n,
+      velocity: 0n,
+      count: 0,
     };
-  });
+    entry.locked += deposited > withdrawn ? deposited - withdrawn : 0n;
+    entry.velocity += BigInt(stream.ratePerSecond);
+    entry.count += 1;
+    byToken.set(stream.tokenAddress, entry);
+  }
+
+  const tokens: TokenTvl[] = [...byToken.entries()].map(
+    ([tokenAddress, agg]) => ({
+      tokenAddress,
+      totalLockedStroops: agg.locked.toString(),
+      velocityPerSecondStroops: agg.velocity.toString(),
+      activeStreamCount: agg.count,
+    })
+  );
 
   const totalTvlStroops = tokens
     .reduce((acc, t) => acc + BigInt(t.totalLockedStroops), 0n)
@@ -135,12 +154,7 @@ async function liveTvl(): Promise<TvlSnapshot> {
 
 /** Latest snapshot row per token, straight from the hypertable. */
 async function timescaleTvl(): Promise<TvlSnapshot> {
-  const result = await pool.query<{
-    token_address: string;
-    total_locked_amount: string;
-    flow_velocity_per_second: string;
-    active_stream_count: number;
-  }>(
+  const result = await pool.query(
     `SELECT DISTINCT ON (token_address)
             token_address,
             total_locked_amount,
@@ -150,7 +164,14 @@ async function timescaleTvl(): Promise<TvlSnapshot> {
       ORDER BY token_address, time DESC`
   );
 
-  const tokens: TokenTvl[] = result.rows.map((row) => ({
+  const snapshotRows = result.rows as {
+    token_address: string;
+    total_locked_amount: string;
+    flow_velocity_per_second: string;
+    active_stream_count: number;
+  }[];
+
+  const tokens: TokenTvl[] = snapshotRows.map((row) => ({
     tokenAddress: row.token_address,
     totalLockedStroops: BigInt(row.total_locked_amount).toString(),
     velocityPerSecondStroops: BigInt(row.flow_velocity_per_second).toString(),
@@ -176,8 +197,8 @@ export async function getProtocolTvl(): Promise<TvlSnapshot> {
       return await timescaleTvl();
     } catch (error) {
       logger.warn(
-        { err: error },
-        "Timescale TVL query failed; falling back to live aggregation"
+        "Timescale TVL query failed; falling back to live aggregation:",
+        error
       );
     }
   }
@@ -197,13 +218,7 @@ export async function getHistoricalAnalytics(
     interval === "1d" ? "daily_protocol_metrics" : "hourly_protocol_metrics";
   const days = PERIOD_DAYS[period];
 
-  const result = await pool.query<{
-    bucket: Date;
-    token_address: string;
-    avg_tvl: string;
-    aggregate_velocity: string;
-    peak_streams: number;
-  }>(
+  const result = await pool.query(
     `SELECT bucket, token_address, avg_tvl, aggregate_velocity, peak_streams
        FROM ${view}
       WHERE bucket >= now() - ($1 || ' days')::interval
@@ -211,11 +226,19 @@ export async function getHistoricalAnalytics(
     [String(days)]
   );
 
+  const seriesRows = result.rows as {
+    bucket: Date;
+    token_address: string;
+    avg_tvl: string;
+    aggregate_velocity: string;
+    peak_streams: number;
+  }[];
+
   return {
     source: "timescaledb",
     period,
     interval,
-    points: result.rows.map((row) => ({
+    points: seriesRows.map((row) => ({
       bucket: new Date(row.bucket).toISOString(),
       tokenAddress: row.token_address,
       avgTvlStroops: BigInt(row.avg_tvl).toString(),

@@ -30,7 +30,7 @@ export async function getTvlHandler(_req: Request, res: Response) {
     const snapshot = await getProtocolTvl();
     res.json({ success: true, data: snapshot });
   } catch (error) {
-    logger.error({ err: error }, "analytics TVL request failed");
+    logger.error("analytics TVL request failed:", error);
     sendApiError(res, 500, "ANALYTICS_UNAVAILABLE", "TVL snapshot unavailable");
   }
 }
@@ -45,27 +45,29 @@ export async function getHistoricalHandler(req: Request, res: Response) {
   const interval = (req.query.interval ?? "1d") as AnalyticsInterval;
 
   if (!VALID_PERIODS.includes(period)) {
-    return sendApiError(
+    sendApiError(
       res,
       400,
       "INVALID_PERIOD",
       `period must be one of: ${VALID_PERIODS.join(", ")}`
     );
+    return;
   }
   if (!VALID_INTERVALS.includes(interval)) {
-    return sendApiError(
+    sendApiError(
       res,
       400,
       "INVALID_INTERVAL",
       `interval must be one of: ${VALID_INTERVALS.join(", ")}`
     );
+    return;
   }
 
   try {
     const series = await getHistoricalAnalytics(period, interval);
     res.json({ success: true, data: series });
   } catch (error) {
-    logger.error({ err: error }, "analytics historical request failed");
+    logger.error("analytics historical request failed:", error);
     sendApiError(
       res,
       500,
@@ -86,7 +88,7 @@ export async function getDefiLlamaHandler(_req: Request, res: Response) {
     // DefiLlama consumes the raw object; no success envelope here.
     res.json(adapter);
   } catch (error) {
-    logger.error({ err: error }, "DefiLlama adapter request failed");
+    logger.error("DefiLlama adapter request failed:", error);
     sendApiError(
       res,
       500,
