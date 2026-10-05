@@ -29,7 +29,7 @@
   "author": "",
   "license": "ISC",
   "overrides": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.20.0"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",

@@ -2327,14 +2327,14 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
                 None
             },
             schedule: VestingSchedule::Linear,
+            arbiter: None,
+            dispute_status: DisputeStatus::None,
+            is_allowance_based: false,
             status: if paused {
                 StreamStatus::Paused
             } else {
                 StreamStatus::Active
             },
-            arbiter: None,
-            dispute_status: DisputeStatus::None,
-            is_allowance_based: false,
         };
 
         let claimable = StreamContract::calculate_claimable(&stream, elapsed);

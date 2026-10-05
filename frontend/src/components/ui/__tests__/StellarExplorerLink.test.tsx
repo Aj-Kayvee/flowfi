@@ -1,12 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-const { useNetworkMock } = vi.hoisted(() => ({ useNetworkMock: vi.fn() }));
-
-// Mock the NetworkContext
-vi.mock("@/context/NetworkContext", () => ({
-  useNetwork: useNetworkMock,
 import { StellarExplorerLink } from "../StellarExplorerLink";
 
 // Mutable network state shared with the hoisted module mock, so the mainnet
@@ -20,12 +13,8 @@ vi.mock("@/context/NetworkContext", () => ({
   useNetwork: () => ({ networkId: networkState.networkId }),
 }));
 
-import { StellarExplorerLink } from "../StellarExplorerLink";
-
 describe("StellarExplorerLink", () => {
   beforeEach(() => {
-    useNetworkMock.mockReset();
-    useNetworkMock.mockReturnValue({ networkId: "testnet" });
     networkState.networkId = "testnet";
   });
 
@@ -40,7 +29,6 @@ describe("StellarExplorerLink", () => {
   });
 
   it("generates correct Mainnet URL when network is mainnet", () => {
-    useNetworkMock.mockReturnValue({ networkId: "mainnet" });
     networkState.networkId = "mainnet";
 
     render(<StellarExplorerLink type="account" id="GABC123" />);

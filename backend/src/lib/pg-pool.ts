@@ -63,24 +63,6 @@ export function publishPoolMetrics(pool: pg.Pool): void {
 }
 
 /**
- * Snapshot of the pool's utilisation counters for the admin metrics payload.
- *
- * Kept separate from `publishPoolMetrics` so callers that only want the numbers
- * (e.g. `GET /v1/admin/metrics`) don't have to mutate Prometheus gauges.
- */
-export function getPoolMetrics(pool: pg.Pool): {
-  totalCount: number;
-  idleCount: number;
-  waitingCount: number;
-} {
-  return {
-    totalCount: pool.totalCount ?? 0,
-    idleCount: pool.idleCount ?? 0,
-    waitingCount: pool.waitingCount ?? 0,
-  };
-}
-
-/**
  * Reduce a SQL statement to a low-cardinality operation label.
  *
  * Raw SQL would be a terrible Prometheus label (one series per query, ever), so

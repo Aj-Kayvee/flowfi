@@ -10,8 +10,6 @@ const hoisted = vi.hoisted(() => ({
   delete: vi.fn(),
   triggerPoll: vi.fn(),
   processEvent: vi.fn(),
-  // Pass-through so the reset/replay mutex wrapper executes its callback.
-  runExclusive: vi.fn((fn: () => Promise<unknown>) => fn()),
   runExclusive: vi.fn(),
   sendDeadLetterAlert: vi.fn(),
 }));
@@ -41,18 +39,6 @@ vi.mock('../src/workers/soroban-event-worker.js', () => ({
   },
 }));
 
-vi.mock('../src/logger.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/logger.js')>();
-  return {
-    ...actual,
-    // Keep the real requestContext (AsyncLocalStorage) so replay can bind IDs.
-    default: {
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-    },
-  };
-});
 vi.mock('../src/logger.js', () => ({
   default: {
     info: vi.fn(),

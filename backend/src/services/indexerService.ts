@@ -39,8 +39,6 @@ export async function getIndexerStatus(): Promise<IndexerStatus> {
 }
 
 export async function resetIndexer(toLedger: number): Promise<void> {
-  // Acquire the same mutex that serialises poll/replay batches so an in-flight
-  // poll cannot overwrite the reset cursor after we write it (#1221).
   // Acquire the same mutex that serialises poll/replay batches so that an
   // in-flight poll cannot overwrite the reset cursor after we write it (#1221).
   await sorobanEventWorker.runExclusive(async () => {
@@ -55,8 +53,6 @@ export async function resetIndexer(toLedger: number): Promise<void> {
 }
 
 /**
- * Preview what a reset would do without mutating state, so operators can
- * verify the intended scope before committing (admin `dryRun`).
  * Preview what a reset would do without mutating state.
  * Returns the current cursor and the target ledger so operators can
  * verify the intended scope before committing.
@@ -79,9 +75,6 @@ export async function previewReset(targetLedger: number): Promise<ResetPreview> 
 }
 
 /**
- * Preview what a replay from a given ledger would do without mutating state:
- * the event count, ledger range, and current cursor for sanity-checking a
- * destructive replay before it commits.
  * Preview what a replay from a given ledger would do without mutating state.
  * Returns the event count, ledger range, and current cursor so operators can
  * sanity-check before committing a destructive replay.
@@ -139,18 +132,12 @@ export async function replayFromLedger(
   fromLedger: number,
   customRequestId?: string,
 ): Promise<string> {
-  const requestId =
-    customRequestId || requestContext.getStore()?.requestId || randomUUID();
-
-  return requestContext.run({ requestId }, async () => {
   const requestId = customRequestId || requestContext.getStore()?.requestId || randomUUID();
   await requestContext.run({ requestId }, async () => {
     await resetIndexer(fromLedger);
     // Kick off an immediate poll cycle without waiting for the next interval.
     await sorobanEventWorker.triggerPoll(requestId);
     logger.info(`[IndexerService] Replay triggered from ledger ${fromLedger}`);
-    return requestId;
-  });
   });
   return requestId;
 }
@@ -302,8 +289,6 @@ function eventTypeOf(event: rpc.Api.EventResponse): string {
   const topic0 = event.topic?.[0];
   if (!topic0) return 'unknown';
   try {
-    // SDK v17 exposes the symbol as a property (`.sym`), not a method.
-    return (topic0 as xdr.ScValSymbol).sym.toString();
     // `ScVal` is a union; only the symbol arm carries `sym`, and in recent
     // stellar-sdk versions it is a value (not a method). Read the property and
     // stringify it so this survives across SDK generations.
