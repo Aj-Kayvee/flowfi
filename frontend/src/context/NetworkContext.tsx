@@ -38,6 +38,13 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const isHydrated = useSyncExternalStore(subscribeToNothing, readHydratedOnClient, readHydratedOnServer);
   const setPersistedNetwork = useCallback((id: NetworkId) => { window.localStorage.setItem(STORAGE_KEY, id); listeners.forEach((listener) => listener()); }, []);
   const value = useMemo(() => ({ network: getNetworkConfig(networkId), networkId, setNetworkId: setPersistedNetwork, isHydrated }), [networkId, isHydrated, setPersistedNetwork]);
+  const [networkId, setNetworkId] = useState<NetworkId>("testnet"); const [isHydrated, setHydrated] = useState(false);
+  // Hydrate the persisted network from localStorage exactly once on mount.
+  // The setState calls are intentional and bounded to that single run.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { const stored = window.localStorage.getItem(STORAGE_KEY) as NetworkId | null; if (stored && stored in NETWORK_CONFIGS) setNetworkId(stored); setHydrated(true); }, []);
+  const setPersistedNetwork = (id: NetworkId) => { setNetworkId(id); window.localStorage.setItem(STORAGE_KEY, id); };
+  const value = useMemo(() => ({ network: getNetworkConfig(networkId), networkId, setNetworkId: setPersistedNetwork, isHydrated }), [networkId, isHydrated]);
   return <NetworkContext.Provider value={value}>{children}</NetworkContext.Provider>;
 }
 

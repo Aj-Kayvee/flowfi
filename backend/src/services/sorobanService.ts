@@ -1,6 +1,7 @@
 import { rpc, xdr, StrKey, Contract, nativeToScVal, Keypair, TransactionBuilder, Networks, Account, Address } from '@stellar/stellar-sdk';
 import logger from '../logger.js';
 import { ApiError } from '../lib/api-error.js';
+import { rpcPool } from '../lib/rpc-pool.js';
 import {
   recordRpcRequest,
   rpcCircuitBreakerTripsTotal,
@@ -391,6 +392,45 @@ export async function pollTransactionStatus(
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
+ * Poll Soroban RPC getTransaction until the transaction reaches a terminal
+ * status (SUCCESS or FAILED) or until the bounded timeout expires.
+ */
+export async function pollTransactionStatus(
+  txHash: string,
+  timeoutMs: number = getTxConfirmationTimeoutMs(),
+  pollIntervalMs: number = getTxPollIntervalMs(),
+): Promise<rpc.Api.GetSuccessfulTransactionResponse> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    const txResponse = await withRpcRetry('getTransaction', () =>
+      withRpcTimeout('getTransaction', () => executeRpc('getTransaction', (server) => server.getTransaction(txHash))),
+    );
+
+    if (
+      txResponse.status === rpc.Api.GetTransactionStatus.SUCCESS ||
+      (txResponse.status as string) === 'SUCCESS'
+    ) {
+      return txResponse as rpc.Api.GetSuccessfulTransactionResponse;
+    }
+
+    if (
+      txResponse.status === rpc.Api.GetTransactionStatus.FAILED ||
+      (txResponse.status as string) === 'FAILED'
+    ) {
+      const failed = txResponse as rpc.Api.GetFailedTransactionResponse;
+      const errorDetail = failed.resultXdr
+        ? ` (resultXdr: ${failed.resultXdr.toXDR('base64')})`
+        : '';
+      throw new Error(`Transaction failed on-chain: ${txHash}${errorDetail}`);
+    }
+
+    if (pollIntervalMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  }
+
+  throw new Error(`Transaction confirmation timed out after ${timeoutMs}ms: ${txHash}`);
 }
 
 /**
@@ -405,6 +445,7 @@ export async function getLatestLedger(): Promise<number> {
       withRpcTimeout('getLatestLedger', () =>
         executeRpc('getLatestLedger', (server) => server.getLatestLedger()),
       ),
+      withRpcTimeout('getLatestLedger', () => executeRpc('getLatestLedger', (server) => server.getLatestLedger())),
     );
     return Number(response.sequence);
   } catch (err) {
@@ -912,6 +953,10 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
         const parts = retval.u128;
         const hi = BigInt.asUintN(64, BigInt(parts.hi.toString()));
         const lo = BigInt.asUintN(64, BigInt(parts.lo.toString()));
+      case 'scvU128': {
+        const parts = retval.u128;
+        const hi = BigInt.asUintN(64, parts.hi);
+        const lo = BigInt.asUintN(64, parts.lo);
         return ((hi << 64n) | lo).toString();
       }
       case 'scvVoid':
@@ -960,6 +1005,7 @@ export async function simulateStreamAction(
       withRpcTimeout('getAccount', () =>
         executeRpc('getAccount', (server) => server.getAccount(senderPublicKey)),
       ),
+      withRpcTimeout('getAccount', () => executeRpc('getAccount', (server) => server.getAccount(senderPublicKey))),
     );
   } catch (err) {
     logger.warn(
@@ -985,6 +1031,7 @@ export async function simulateStreamAction(
     withRpcTimeout('simulateTransaction', () =>
       executeRpc('simulateTransaction', (server) => server.simulateTransaction(tx)),
     ),
+    withRpcTimeout('simulateTransaction', () => executeRpc('simulateTransaction', (server) => server.simulateTransaction(tx))),
   );
 
   if (rpc.Api.isSimulationError(simulation)) {

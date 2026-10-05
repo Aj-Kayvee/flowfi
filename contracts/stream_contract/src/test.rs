@@ -4,7 +4,6 @@ use std::string::ToString;
 
 use super::*;
 use soroban_sdk::{
-    contract, contractimpl,
     testutils::{Address as _, Events, Ledger},
     token, vec, xdr, Address, Bytes, BytesN, Env, Symbol, TryFromVal, Val, Vec as SorobanVec,
 };
@@ -91,6 +90,10 @@ fn test_fee_transfer_observes_persisted_stream_on_create_and_top_up() {
     });
     assert_eq!(observed_top_up_deposit, 1_425);
 }
+// NOTE: fee-transfer CEI (persist before transfer) is verified via
+// post-call state/events, not via re-entrant callback: Soroban hosts
+// forbid contract re-entry ("Contract re-entry is not allowed"), so a
+// fee token cannot call back into get_stream during transfer.
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -2375,6 +2378,9 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
             } else {
                 StreamStatus::Active
             },
+            arbiter: None,
+            dispute_status: DisputeStatus::None,
+            is_allowance_based: false,
         };
 
         let claimable = StreamContract::calculate_claimable(&stream, elapsed);
@@ -4587,6 +4593,7 @@ fn raw_stream_field_count(env: &Env, contract: &Address, stream_id: u64) -> u32 
 fn stream_record_is_current_shape(env: &Env, contract: &Address, stream_id: u64) -> bool {
     // The current `Stream` shape is 17 fields: `LegacyStream` carries neither
     // `schedule`/`cliff_time` nor the dispute/allowance fields.
+    // `Stream` now carries cliff_time + arbiter/dispute/allowance fields (17 total); `LegacyStream` has 12.
     raw_stream_field_count(env, contract, stream_id) == 17
 }
 

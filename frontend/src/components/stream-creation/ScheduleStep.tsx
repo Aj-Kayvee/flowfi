@@ -4,10 +4,16 @@ import { useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { StreamFormData, StreamFormErrors } from "@/lib/stream-validation";
 
+type ScheduleFormData = Pick<
+  StreamFormData,
+  "duration" | "durationUnit" | "descriptionTag" | "memo"
+>;
+
 // The props mirror the shared form hook, so this step edits the same model the
 // wizard validates and submits rather than a local copy of it.
 interface ScheduleStepProps {
   formData: StreamFormData;
+  formData: ScheduleFormData;
   errors: StreamFormErrors;
   onUpdate: (data: Partial<StreamFormData>) => void;
 }
@@ -18,6 +24,11 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
   const memo = formData.memo || "";
   // Derived during render instead of mirrored into state from an effect.
   const memoByteCount = useMemo(() => new TextEncoder().encode(memo).length, [memo]);
+  // UTF-8 byte length, derived during render rather than stored in state.
+  const memoByteCount = useMemo(
+    () => new TextEncoder().encode(memo).length,
+    [memo],
+  );
 
   const isNearLimit = memoByteCount >= MAX_MEMO_BYTES * 0.8;
   const isOverLimit = memoByteCount > MAX_MEMO_BYTES;
@@ -48,6 +59,9 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
               value={formData.durationUnit}
               onChange={(e) =>
                 onUpdate({ durationUnit: e.target.value as StreamFormData["durationUnit"] })
+                onUpdate({
+                  durationUnit: e.target.value as StreamFormData["durationUnit"],
+                })
               }
               className="px-4 py-3 rounded-lg bg-black/40 border border-white/10 focus:border-accent outline-none"
             >
@@ -68,7 +82,7 @@ export function ScheduleStep({ formData, errors, onUpdate }: ScheduleStepProps) 
           <input
             id="descriptionTag"
             type="text"
-            value={formData.descriptionTag}
+            value={formData.descriptionTag ?? ""}
             onChange={(e) => onUpdate({ descriptionTag: e.target.value })}
             className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 focus:border-accent outline-none"
             placeholder="e.g., salary, contractor-payment, subscription"

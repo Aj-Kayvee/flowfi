@@ -353,6 +353,7 @@ export async function batchWithdrawFromStreams(
     // encodes each entry as the given type. Produces the same ScVal as
     // `xdr.ScVal.scvVec(ids.map(...))`.
     nativeToScVal(params.streamIds, { type: ["u64"] }),
+    nativeToScVal(params.streamIds, { type: "u64" }),
   ]);
 }
 
