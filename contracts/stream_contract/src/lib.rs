@@ -45,12 +45,12 @@ use soroban_sdk::{
 use errors::StreamError;
 use events::{
     AdminTransferredEvent, AllowanceStreamCreatedEvent, ContractUpgradedEvent,
-    DisputeRequestedEvent, DisputeResolvedEvent, EmergencyGuardianUpdatedEvent,
-    FeeCollectedEvent, FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
+    DisputeRequestedEvent, DisputeResolvedEvent, EmergencyGuardianUpdatedEvent, FeeCollectedEvent,
+    FeeConfigUpdatedEvent, HybridCliffStreamCreatedEvent, InitializedEvent,
     MilestoneConditionUnlockedEvent, ProtocolPauseStatusEvent, StateMigratedEvent,
-    StepVestingStreamCreatedEvent, StreamCancelledEvent, StreamClosedEvent,
-    StreamCompletedEvent, StreamCreatedEvent, StreamPausedEvent, StreamRateModifiedEvent,
-    StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent
+    StepVestingStreamCreatedEvent, StreamCancelledEvent, StreamClosedEvent, StreamCompletedEvent,
+    StreamCreatedEvent, StreamPausedEvent, StreamRateModifiedEvent, StreamResumedEvent,
+    StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use storage::{
     config_exists, get_contract_version, get_recorded_wasm_hash, load_config, load_stream,
@@ -58,10 +58,9 @@ use storage::{
     save_stream, try_load_config, try_load_stream,
 };
 use types::{
-    ConditionalMilestone, DataKey, DisputeStatus, MAX_BATCH_WITHDRAW,
-    MAX_CONDITIONAL_MILESTONES, MAX_VESTING_STEPS, ORACLE_PRICE_MAX_AGE_SECS, OracleAsset,
-    OracleClient, ProtocolConfig, Stream, StreamStatus, UnlockCondition, VestingSchedule,
-    VestingStep
+    ConditionalMilestone, DataKey, DisputeStatus, OracleAsset, OracleClient, ProtocolConfig,
+    Stream, StreamStatus, UnlockCondition, VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW,
+    MAX_CONDITIONAL_MILESTONES, MAX_VESTING_STEPS, ORACLE_PRICE_MAX_AGE_SECS,
 };
 
 /// Maximum allowed protocol fee: 1 000 bps = 10%.
@@ -817,13 +816,13 @@ impl StreamContract {
                 is_allowance_based: false,
             },
         );
-        env.storage().instance().set(
-            &DataKey::ConditionalMilestones(stream_id),
-            &milestones,
-        );
         env.storage()
             .instance()
-            .set(&DataKey::AttestedIds(stream_id), &Vec::<BytesN<32>>::new(&env));
+            .set(&DataKey::ConditionalMilestones(stream_id), &milestones);
+        env.storage().instance().set(
+            &DataKey::AttestedIds(stream_id),
+            &Vec::<BytesN<32>>::new(&env),
+        );
 
         Self::transfer_fee(&env, &token_address, stream_id, fee_amount, treasury);
 
@@ -895,13 +894,7 @@ impl StreamContract {
             .ok_or(StreamError::StreamNotFound)?;
 
         let index = (0..milestones.len())
-            .find(|&i| {
-                milestones
-                    .get(i)
-                    .expect("index in range")
-                    .milestone_id
-                    == milestone_id
-            })
+            .find(|&i| milestones.get(i).expect("index in range").milestone_id == milestone_id)
             .ok_or(StreamError::InvalidMilestone)?;
         let mut milestone = milestones.get(index).expect("index in range");
         if milestone.is_unlocked {
@@ -955,10 +948,9 @@ impl StreamContract {
         milestone.is_unlocked = true;
         let unlocked_amount = milestone.amount;
         milestones.set(index, milestone);
-        env.storage().instance().set(
-            &DataKey::ConditionalMilestones(stream_id),
-            &milestones,
-        );
+        env.storage()
+            .instance()
+            .set(&DataKey::ConditionalMilestones(stream_id), &milestones);
 
         // Promote the tranche into the normal step-unlock flow: rewrite its
         // gate time from "never" to "now" so `calculate_claimable` counts it.
