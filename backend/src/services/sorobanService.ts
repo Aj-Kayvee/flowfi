@@ -1,13 +1,13 @@
 import { rpc, xdr, StrKey, Contract, nativeToScVal, Keypair, TransactionBuilder, Networks, Account, Address } from '@stellar/stellar-sdk';
 import logger from '../logger.js';
 import { ApiError } from '../lib/api-error.js';
+import { rpcPool } from '../lib/rpc-pool.js';
 import {
   recordRpcRequest,
   rpcCircuitBreakerTripsTotal,
   rpcFailoversTotal,
 } from '../lib/metrics.js';
 import { withSpan } from '../lib/tracing.js';
-import { rpcPool } from '../lib/rpc-pool.js';
 
 const RPC_URL = process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
 
@@ -356,41 +356,45 @@ export async function submitContractCall(method: string, args: xdr.ScVal[], send
 }
 
 /**
- * Poll the network until a submitted transaction reaches a terminal status.
- *
- * `NOT_FOUND` is the mempool/in-flight signal and is retried until the deadline;
- * `SUCCESS` resolves with the final response and `FAILED` throws immediately.
- * The deadline is enforced with a strict `<` check against `Date.now()` so a
- * zero timeout still performs exactly one poll.
+ * Poll Soroban RPC getTransaction until the transaction reaches a terminal
+ * status (SUCCESS or FAILED) or until the bounded timeout expires.
  */
 export async function pollTransactionStatus(
-  hash: string,
+  txHash: string,
   timeoutMs: number = getTxConfirmationTimeoutMs(),
-  intervalMs: number = getTxPollIntervalMs(),
-): Promise<rpc.Api.GetTransactionResponse> {
-  const deadline = Date.now() + Math.max(0, timeoutMs);
+  pollIntervalMs: number = getTxPollIntervalMs(),
+): Promise<rpc.Api.GetSuccessfulTransactionResponse> {
+  const startTime = Date.now();
 
-  for (;;) {
-    const response = await withRpcRetry('getTransaction', () =>
-      withRpcTimeout('getTransaction', () =>
-        executeRpc('getTransaction', (server) => server.getTransaction(hash)),
-      ),
+  while (Date.now() - startTime < timeoutMs) {
+    const txResponse = await withRpcRetry('getTransaction', () =>
+      withRpcTimeout('getTransaction', () => executeRpc('getTransaction', (server) => server.getTransaction(txHash))),
     );
 
-    if (response.status === rpc.Api.GetTransactionStatus.SUCCESS) {
-      return response;
-    }
-    if (response.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`Transaction failed on-chain: ${hash}`);
+    if (
+      txResponse.status === rpc.Api.GetTransactionStatus.SUCCESS ||
+      (txResponse.status as string) === 'SUCCESS'
+    ) {
+      return txResponse as rpc.Api.GetSuccessfulTransactionResponse;
     }
 
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Transaction confirmation timed out after ${timeoutMs}ms: ${hash}`,
-      );
+    if (
+      txResponse.status === rpc.Api.GetTransactionStatus.FAILED ||
+      (txResponse.status as string) === 'FAILED'
+    ) {
+      const failed = txResponse as rpc.Api.GetFailedTransactionResponse;
+      const errorDetail = failed.resultXdr
+        ? ` (resultXdr: ${failed.resultXdr.toXDR('base64')})`
+        : '';
+      throw new Error(`Transaction failed on-chain: ${txHash}${errorDetail}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+    if (pollIntervalMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
   }
+
+  throw new Error(`Transaction confirmation timed out after ${timeoutMs}ms: ${txHash}`);
 }
 
 /**
@@ -402,9 +406,7 @@ export async function pollTransactionStatus(
 export async function getLatestLedger(): Promise<number> {
   try {
     const response = await withRpcRetry('getLatestLedger', () =>
-      withRpcTimeout('getLatestLedger', () =>
-        executeRpc('getLatestLedger', (server) => server.getLatestLedger()),
-      ),
+      withRpcTimeout('getLatestLedger', () => executeRpc('getLatestLedger', (server) => server.getLatestLedger())),
     );
     return Number(response.sequence);
   } catch (err) {
@@ -896,7 +898,6 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
   if (!retval) return '';
 
   try {
-    // SDK v17 exposes ScVal fields as properties discriminated by `type`.
     switch (retval.type) {
       case 'scvI128':
         return decodeI128(retval);
@@ -906,18 +907,14 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
         return retval.u32.toString();
       case 'scvI64':
         return retval.i64.toString();
-      case 'scvI32':
-        return retval.i32.toString();
       case 'scvU128': {
         const parts = retval.u128;
-        const hi = BigInt.asUintN(64, BigInt(parts.hi.toString()));
-        const lo = BigInt.asUintN(64, BigInt(parts.lo.toString()));
+        const hi = BigInt.asUintN(64, parts.hi);
+        const lo = BigInt.asUintN(64, parts.lo);
         return ((hi << 64n) | lo).toString();
       }
-      case 'scvVoid':
-        return '';
       default:
-        // Non-numeric returns (addresses, maps, event markers) are surfaced as
+        // Non-numeric returns (addresses, maps, void markers) are surfaced as
         // base64 XDR so the client can decode them with the SDK if it needs to.
         return Buffer.from(retval.toXDR()).toString('base64');
     }
@@ -957,9 +954,7 @@ export async function simulateStreamAction(
   let sourceAccount: Account;
   try {
     sourceAccount = await withRpcRetry('getAccount', () =>
-      withRpcTimeout('getAccount', () =>
-        executeRpc('getAccount', (server) => server.getAccount(senderPublicKey)),
-      ),
+      withRpcTimeout('getAccount', () => executeRpc('getAccount', (server) => server.getAccount(senderPublicKey))),
     );
   } catch (err) {
     logger.warn(
@@ -982,9 +977,7 @@ export async function simulateStreamAction(
   const tx = builder.setTimeout(TX_TIMEOUT_SECONDS).build();
 
   const simulation = await withRpcRetry('simulateTransaction', () =>
-    withRpcTimeout('simulateTransaction', () =>
-      executeRpc('simulateTransaction', (server) => server.simulateTransaction(tx)),
-    ),
+    withRpcTimeout('simulateTransaction', () => executeRpc('simulateTransaction', (server) => server.simulateTransaction(tx))),
   );
 
   if (rpc.Api.isSimulationError(simulation)) {

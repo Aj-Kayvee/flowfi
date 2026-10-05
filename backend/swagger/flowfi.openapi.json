@@ -1723,6 +1723,55 @@
         }
       }
     },
+    "/v1/tokens": {
+      "get": {
+        "tags": [
+          "Tokens"
+        ],
+        "summary": "List verified token metadata",
+        "description": "Returns symbol, name, decimals, contract address and icon for every\nverified Stellar asset. The response carries an `ETag` and a\n`Cache-Control` header; clients should revalidate with\n`If-None-Match` and accept a `304 Not Modified` while the metadata is\nunchanged.\n",
+        "responses": {
+          "200": {
+            "description": "Verified token metadata",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "public, max-age=3600, stale-while-revalidate=86400"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified - the caller's cached copy is still current"
+          }
+        }
+      }
+    },
     "/v1/streams": {
       "post": {
         "tags": [

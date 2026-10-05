@@ -2023,6 +2023,12 @@ impl StreamContract {
         ) {
             Ok(Ok(allowance)) if allowance > 0 => {}
             _ => return Err(StreamError::AllowanceLocked),
+        // Check allowance: just verify it's callable, don't lock it yet
+        let token_client = token::Client::new(&env, &token_address);
+        // Use the generated client: avoids manual Val conversion for try_invoke.
+        let allowance = token_client.allowance(&sender, &env.current_contract_address());
+        if allowance <= 0 {
+            return Err(StreamError::AllowanceLocked);
         }
 
         // Calculate rate: use a nominal rate of 1 per second
