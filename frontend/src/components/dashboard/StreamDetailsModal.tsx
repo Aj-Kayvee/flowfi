@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/Button";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { CopyButton } from "./CopyButton";
