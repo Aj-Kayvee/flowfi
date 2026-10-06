@@ -6,6 +6,8 @@ import {
   getIndexerStatus,
   resetIndexer,
   replayFromLedger,
+  previewReset,
+  previewReplay,
 } from '../../services/indexerService.js';
 import {
   discardDeadLetterHandler,
@@ -14,7 +16,8 @@ import {
   replayDeadLetterHandler,
 } from '../../controllers/admin.controller.js';
 
-import { prisma, pool, getPoolMetrics } from '../../lib/prisma.js';
+import { prisma, pool } from '../../lib/prisma.js';
+import { getPoolMetrics } from '../../lib/pg-pool.js';
 import { INDEXER_STATE_ID } from '../../lib/indexer-state.js';
 import { sseService } from '../../services/sse.service.js';
 import { cache } from '../../lib/redis.js';
@@ -414,9 +417,8 @@ router.post('/indexer/reset', async (req: Request, res: Response) => {
 
   try {
     if (dryRun) {
-      // Dry-run: return what would be reset without mutating state
-      const currentState = await prisma.indexerState.findUnique({ where: { id: INDEXER_STATE_ID } });
-      res.json({ dryRun: true, preview: { fromLedger: currentState?.lastLedger ?? 0, toLedger: ledger } });
+      const preview = await previewReset(ledger);
+      res.json({ dryRun: true, preview });
       return;
     }
     await resetIndexer(ledger);
@@ -494,9 +496,8 @@ router.post('/indexer/replay', async (req: Request, res: Response) => {
 
   try {
     if (dryRun) {
-      // Dry-run: return what would be replayed without mutating state
-      const eventCount = await prisma.streamEvent.count({ where: { ledgerSequence: { gte: fromLedger } } });
-      res.json({ dryRun: true, preview: { fromLedger, eventCount } });
+      const preview = await previewReplay(fromLedger);
+      res.json({ dryRun: true, preview });
       return;
     }
     const requestId = await replayFromLedger(fromLedger);

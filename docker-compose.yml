@@ -26,7 +26,7 @@ services:
   # and rate-limit state sharing. Required for the dev:mock sandbox.
   # Pinned to Redis 7 (alpine) — same upgrade policy as postgres above.
   redis:
-    image: redis:7-alpine@sha256:ee13953704498a9fc830f386a54f26f77b87cb2b2f45c4ad09c1d7f5ea4c2c0f
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: flowfi-redis
     ports:
       - "6379:6379"

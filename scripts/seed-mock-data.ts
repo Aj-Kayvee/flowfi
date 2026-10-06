@@ -14,22 +14,22 @@
  *   npm run dev:mock
  */
 
-import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../backend/src/generated/prisma/index.js';
-import pg from 'pg';
-
-const { Pool } = pg;
 
 // ---------------------------------------------------------------------------
-// Database connection (mirrors backend/prisma/seed.ts)
+// Database connection (mirrors backend/prisma/seed.ts).
+//
+// A plain PrismaClient reads `DATABASE_URL` from the environment — no driver
+// adapter needed here, and none of the backend's `node_modules` either, so the
+// script resolves cleanly when launched from the repo root via `npx tsx`.
 // ---------------------------------------------------------------------------
 const DATABASE_URL =
   process.env['DATABASE_URL'] ??
   'postgresql://flowfi:flowfi_dev_password@localhost:5433/flowfi';
 
-const pool = new Pool({ connectionString: DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter } as never);
+process.env['DATABASE_URL'] = DATABASE_URL;
+
+const prisma = new PrismaClient();
 
 // ---------------------------------------------------------------------------
 // Mock users (5 distinct Stellar public keys)
@@ -533,7 +533,7 @@ async function main(): Promise<void> {
         lastUpdateTime: now,
         isActive: s.isActive,
         isPaused: s.isPaused,
-        pausedAt: pausedAt ?? undefined,
+        pausedAt,
       },
       create: {
         streamId: s.streamId,
@@ -545,10 +545,10 @@ async function main(): Promise<void> {
         withdrawnAmount: s.withdrawnAmount,
         startTime,
         lastUpdateTime: now,
-        endTime: endTime ?? undefined,
+        endTime,
         isActive: s.isActive,
         isPaused: s.isPaused,
-        pausedAt: pausedAt ?? undefined,
+        pausedAt,
         totalPausedDuration: 0,
       },
     });
@@ -609,5 +609,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end();
   });

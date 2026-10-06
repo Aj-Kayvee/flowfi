@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/index.js';
-import { createPgPool, getPoolMetrics } from './pg-pool.js';
+import { createPgPool } from './pg-pool.js';
 
 const globalForPrisma = global as unknown as {
   prisma?: PrismaClient;
@@ -12,13 +12,7 @@ if (!globalForPrisma.pool) {
   globalForPrisma.pool = createPgPool();
 }
 
-// `@prisma/adapter-pg` pulls in its own copy of `@types/pg`, so its `pg.Pool`
-// parameter type is structurally distinct from the one this module resolves
-// even though both describe the same runtime class. Bridge the two nominal
-// copies through `unknown`; the object handed over is the pool we created.
-const adapter = new PrismaPg(
-  globalForPrisma.pool as unknown as ConstructorParameters<typeof PrismaPg>[0],
-);
+const adapter = new PrismaPg(globalForPrisma.pool);
 
 export const prisma =
   globalForPrisma.prisma ||
@@ -29,7 +23,7 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
-export { getPoolMetrics };
+export { getPoolMetrics } from './pg-pool.js';
 export const pool = globalForPrisma.pool!;
 
 export default prisma;

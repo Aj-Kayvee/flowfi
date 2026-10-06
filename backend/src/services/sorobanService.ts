@@ -1,13 +1,13 @@
 import { rpc, xdr, StrKey, Contract, nativeToScVal, Keypair, TransactionBuilder, Networks, Account, Address } from '@stellar/stellar-sdk';
 import logger from '../logger.js';
 import { ApiError } from '../lib/api-error.js';
+import { rpcPool } from '../lib/rpc-pool.js';
 import {
   recordRpcRequest,
   rpcCircuitBreakerTripsTotal,
   rpcFailoversTotal,
 } from '../lib/metrics.js';
 import { withSpan } from '../lib/tracing.js';
-import { rpcPool } from '../lib/rpc-pool.js';
 
 const RPC_URL = process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
 
@@ -44,10 +44,14 @@ const RPC_MAX_RETRIES = Number(process.env.SOROBAN_RPC_MAX_RETRIES ?? 2);
 const RPC_RETRY_BASE_MS = Number(process.env.SOROBAN_RPC_RETRY_BASE_MS ?? 250);
 
 /** Bounded deadline for awaiting on-chain transaction finality (default 30s). */
-const TX_CONFIRMATION_TIMEOUT_MS = Number(process.env.SOROBAN_TX_CONFIRMATION_TIMEOUT_MS ?? 30_000);
+function getTxConfirmationTimeoutMs(): number {
+  return Number(process.env.SOROBAN_TX_CONFIRMATION_TIMEOUT_MS ?? 30_000);
+}
 
 /** Polling interval when awaiting on-chain transaction finality (default 1s). */
-const TX_POLL_INTERVAL_MS = Number(process.env.SOROBAN_TX_POLL_INTERVAL_MS ?? 1_000);
+function getTxPollIntervalMs(): number {
+  return Number(process.env.SOROBAN_TX_POLL_INTERVAL_MS ?? 1_000);
+}
 
 const DEFAULT_RPC_HEALTH_CACHE_TTL_MS = 10_000;
 
@@ -189,7 +193,7 @@ let _server: rpc.Server | null = null;
 
 async function executeRpc<T>(label: string, operation: (server: rpc.Server) => Promise<T>): Promise<T> {
   if (_server) return operation(_server);
-  return rpcPool.execute(label, (server, _signal) => operation(server));
+  return rpcPool.execute(label, (server) => operation(server));
 }
 
 /**
@@ -352,22 +356,45 @@ export async function submitContractCall(method: string, args: xdr.ScVal[], send
 }
 
 /**
- * Poll until a submitted transaction reaches a terminal state (SUCCESS or FAILED).
- * Throws if the transaction fails or the confirmation timeout is exceeded.
+ * Poll Soroban RPC getTransaction until the transaction reaches a terminal
+ * status (SUCCESS or FAILED) or until the bounded timeout expires.
  */
-async function pollTransactionStatus(txHash: string): Promise<void> {
-  const deadline = Date.now() + TX_CONFIRMATION_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const status = await withRpcTimeout('getTransaction', () =>
-      executeRpc('getTransaction', (server) => server.getTransaction(txHash)),
+export async function pollTransactionStatus(
+  txHash: string,
+  timeoutMs: number = getTxConfirmationTimeoutMs(),
+  pollIntervalMs: number = getTxPollIntervalMs(),
+): Promise<rpc.Api.GetSuccessfulTransactionResponse> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    const txResponse = await withRpcRetry('getTransaction', () =>
+      withRpcTimeout('getTransaction', () => executeRpc('getTransaction', (server) => server.getTransaction(txHash))),
     );
-    if ((status as { status: string }).status === 'SUCCESS') return;
-    if ((status as { status: string }).status === 'FAILED') {
-      throw new Error(`Transaction ${txHash} failed on-chain`);
+
+    if (
+      txResponse.status === rpc.Api.GetTransactionStatus.SUCCESS ||
+      (txResponse.status as string) === 'SUCCESS'
+    ) {
+      return txResponse as rpc.Api.GetSuccessfulTransactionResponse;
     }
-    await new Promise((r) => setTimeout(r, TX_POLL_INTERVAL_MS));
+
+    if (
+      txResponse.status === rpc.Api.GetTransactionStatus.FAILED ||
+      (txResponse.status as string) === 'FAILED'
+    ) {
+      const failed = txResponse as rpc.Api.GetFailedTransactionResponse;
+      const errorDetail = failed.resultXdr
+        ? ` (resultXdr: ${failed.resultXdr.toXDR('base64')})`
+        : '';
+      throw new Error(`Transaction failed on-chain: ${txHash}${errorDetail}`);
+    }
+
+    if (pollIntervalMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
   }
-  throw new Error(`Transaction ${txHash} not confirmed within ${TX_CONFIRMATION_TIMEOUT_MS}ms`);
+
+  throw new Error(`Transaction confirmation timed out after ${timeoutMs}ms: ${txHash}`);
 }
 
 /**
@@ -871,8 +898,6 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
   if (!retval) return '';
 
   try {
-    // SDK 17 models ScVal as a discriminated union on `type`, with the arm
-    // payloads exposed as plain properties rather than accessor methods.
     switch (retval.type) {
       case 'scvI128':
         return decodeI128(retval);
@@ -884,8 +909,8 @@ function decodeSimulatedReturn(result: rpc.Api.SimulateTransactionSuccessRespons
         return retval.i64.toString();
       case 'scvU128': {
         const parts = retval.u128;
-        const hi = BigInt.asUintN(64, BigInt(parts.hi.toString()));
-        const lo = BigInt.asUintN(64, BigInt(parts.lo.toString()));
+        const hi = BigInt.asUintN(64, parts.hi);
+        const lo = BigInt.asUintN(64, parts.lo);
         return ((hi << 64n) | lo).toString();
       }
       default:

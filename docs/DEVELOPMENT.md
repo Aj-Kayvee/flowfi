@@ -19,7 +19,7 @@ npm run dev:mock
 That one command:
 
 1. **Starts infrastructure** — Postgres, Redis, and a mock Soroban RPC stub via Docker Compose.
-2. **Migrates the database** — runs Prisma migrations automatically.
+2. **Syncs the database schema** — runs `prisma db push` against the fresh local DB (the committed init migration doesn't apply cleanly to an empty database, so the sandbox pushes the schema directly instead of replaying migration history).
 3. **Seeds 20 demo streams** across 5 mock users, with event histories spanning the last 30 days:
    - 7 Active streams (USDC, EURC, XLM)
    - 3 Paused streams (pending milestone review)
