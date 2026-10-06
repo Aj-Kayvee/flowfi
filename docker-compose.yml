@@ -40,60 +40,74 @@ services:
   # ── Mock Soroban RPC ───────────────────────────────────────────────────────
   # A lightweight JSON-RPC stub that returns well-formed Soroban responses so
   # the backend indexer and simulation endpoints work without a live testnet.
-  # Implemented with json-server (alpine Node image) — no custom image build.
-  # The stub responds to any POST on / with an empty result envelope so the
-  # backend worker starts up without errors and simply finds no new events.
+  # Implemented with an inline node one-liner (alpine Node image) — no custom
+  # image build. The command is passed as an exec-form argv list so no shell
+  # quoting is involved and compose/runtime agree byte-for-byte.
   mock-soroban-rpc:
     image: node:20-alpine
     container_name: flowfi-mock-soroban-rpc
     working_dir: /app
-    # Write the stub server inline so we need no extra build context or image.
-    command: >
-      sh -c "
-        node -e \"
-          const http = require('http');
-          const PORT = 8000;
-          const server = http.createServer((req, res) => {
-            let body = '';
-            req.on('data', chunk => { body += chunk; });
-            req.on('end', () => {
-              let id = null;
-              let method = '';
-              try { const j = JSON.parse(body); id = j.id; method = j.method || ''; } catch (_) {}
-              res.setHeader('Content-Type', 'application/json');
-              res.setHeader('Access-Control-Allow-Origin', '*');
-              res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-              if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    command:
+      - node
+      - "-e"
+      - |
+        const http = require('http');
+        const PORT = 8000;
+        const server = http.createServer((req, res) => {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', () => {
+            let id = null;
+            let method = '';
+            try { const j = JSON.parse(body); id = j.id; method = j.method || ''; } catch (_) {}
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+            if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-              let result = {};
-              if (method === 'getLatestLedger') {
-                result = { id: 0, paging_token: '0-0', sequence: 1000000 };
-              } else if (method === 'getEvents') {
-                result = { events: [], latestLedger: 1000000 };
-              } else if (method === 'getTransaction') {
-                result = { status: 'NOT_FOUND' };
-              } else if (method === 'simulateTransaction') {
-                result = { error: 'Mock RPC: simulation not available in sandbox mode' };
-              }
+            let result = {};
+            if (method === 'getLatestLedger') {
+              result = { id: 0, paging_token: '0-0', sequence: 1000000 };
+            } else if (method === 'getEvents') {
+              result = { events: [], latestLedger: 1000000 };
+            } else if (method === 'getTransaction') {
+              result = { status: 'NOT_FOUND' };
+            } else if (method === 'simulateTransaction') {
+              result = { error: 'Mock RPC: simulation not available in sandbox mode' };
+            }
 
-              res.writeHead(200);
-              res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
-            });
+            res.writeHead(200);
+            res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
           });
-          server.listen(PORT, '0.0.0.0', () => {
-            console.log('Mock Soroban RPC listening on port ' + PORT);
-          });
-        \"
-      "
+        });
+        server.listen(PORT, '0.0.0.0', () => {
+          console.log('Mock Soroban RPC listening on port ' + PORT);
+        });
     ports:
       - "8000:8000"
     healthcheck:
-      test: >
-        ["CMD-SHELL",
-         "wget -qO- --post-data='{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getLatestLedger\",\"params\":{}}' --header='Content-Type: application/json' http://localhost:8000/ | grep -q sequence"]
+      test:
+        - CMD
+        - node
+        - "-e"
+        - |
+          const http = require('http');
+          const req = http.request(
+            { host: '127.0.0.1', port: 8000, method: 'POST',
+              headers: { 'Content-Type': 'application/json' } },
+            (res) => {
+              let body = '';
+              res.on('data', (chunk) => { body += chunk; });
+              res.on('end', () =>
+                process.exit(res.statusCode === 200 && body.includes('sequence') ? 0 : 1));
+            },
+          );
+          req.on('error', () => process.exit(1));
+          req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getLatestLedger', params: {} }));
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   backend:
@@ -122,10 +136,17 @@ services:
       mock-soroban-rpc:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      # node-based check: the runtime image only ships busybox wget, which does
+      # not understand GNU flags like --no-verbose/--tries.
+      test:
+        - CMD
+        - node
+        - "-e"
+        - "require('http').get('http://127.0.0.1:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
 
 volumes:
