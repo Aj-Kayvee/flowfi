@@ -199,9 +199,20 @@ pub fn save_stream(env: &Env, stream_id: u64, stream: &Stream) {
 
 /// Removes a stream record from persistent storage.
 ///
+/// **Key:** `DataKey::Stream(stream_id)` in persistent storage.
+///
+/// **TTL:** None, and none is possible — a removed entry has no TTL left to
+/// extend. Removal *reclaims* the rent that [`save_stream`] was paying rather
+/// than renewing it, so this path deliberately does not call `extend_ttl`.
+///
 /// Only ever called once a stream is terminal *and* fully settled, so the
-/// record being dropped can no longer be read for a payout. Always use this
-/// instead of calling `.remove` directly so the key strategy stays in one place.
+/// record being dropped can no longer be read for a payout. Used by
+/// [`close_stream`](crate::StreamContract::close_stream) to prune fully settled
+/// streams; this is the only state-deleting path in the contract, and per ADR
+/// 0001 rule 3 the caller is responsible for having already settled all funds —
+/// after this returns, the record is gone and cannot be reloaded. Always use
+/// this instead of calling `.remove` directly so the key strategy stays in one
+/// place.
 pub fn remove_stream(env: &Env, stream_id: u64) {
     env.storage()
         .persistent()
@@ -424,23 +435,4 @@ pub fn save_recorded_wasm_hash(env: &Env, hash: &soroban_sdk::BytesN<32>) {
     env.storage()
         .instance()
         .set(&DataKey::ContractWasmHash, hash);
-}
-
-// ─── Stream Deletion ──────────────────────────────────────────────────────────
-
-/// Removes a stream record from persistent storage.
-///
-/// **Key:** `DataKey::Stream(stream_id)` in persistent storage.
-///
-/// **TTL:** None, and none is possible — a removed entry has no TTL left to
-/// extend. Removal *reclaims* the rent that [`save_stream`] was paying rather
-/// than renewing it.
-///
-/// Used by [`close_stream`](crate::StreamContract::close_stream) to prune fully
-/// settled streams. This is the only state-deleting path in the contract, and
-/// per ADR 0001 rule 3 the caller is responsible for having already settled
-/// all funds — after this returns, the record is gone and cannot be reloaded.
-pub fn remove_stream(env: &Env, stream_id: u64) {
-    let key = DataKey::Stream(stream_id);
-    env.storage().persistent().remove(&key);
 }
