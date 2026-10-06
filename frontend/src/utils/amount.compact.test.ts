@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatTokenCompact } from "../amount";
+import { formatTokenCompact } from "./amount";
 
 describe("formatTokenCompact", () => {
   it("formats values under 10_000 with grouping but no compact suffix", () => {

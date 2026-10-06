@@ -418,8 +418,10 @@ export function formatTokenCompact(
   // Number.MAX_SAFE_INTEGER lose sub-unit precision here, but that precision
   // is already shown in `exact`, and the compact form is a display hint.
   const asNumber = Number(exact);
+  // Below 10,000 the full grouped value already fits, so skip the K suffix
+  // (otherwise 9,999 would round up to "10K").
   const compactAbs = new Intl.NumberFormat(locale, {
-    notation: "compact",
+    notation: Math.abs(asNumber) < 10_000 ? "standard" : "compact",
     maximumFractionDigits: maxFractionDigits,
   }).format(Math.abs(asNumber));
 
