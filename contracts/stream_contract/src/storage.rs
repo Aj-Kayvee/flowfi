@@ -11,19 +11,20 @@ pub const INSTANCE_BUMP_AMOUNT: u32 = 518_400;
 
 use crate::errors::StreamError;
 use crate::types::{
-    DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, VestingSchedule,
+    DataKey, DisputeStatus, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream,
+    VestingSchedule,
 };
 
 // ─── Version-Tolerant Decoding ────────────────────────────────────────────────
 
-/// Field counts of the current and pre-v2 record shapes.
+/// Field counts of the current and pre-v3 record shapes.
 ///
 /// A `#[contracttype]` struct is stored as a host `Map` with one entry per field,
 /// and decoding it walks the map positionally. The current shapes are described
 /// here only so the two can be told apart before a decode is attempted.
 const CONFIG_FIELD_COUNT: u32 = 5;
 const LEGACY_CONFIG_FIELD_COUNT: u32 = 3;
-const STREAM_FIELD_COUNT: u32 = 13;
+const STREAM_FIELD_COUNT: u32 = 17;
 const LEGACY_STREAM_FIELD_COUNT: u32 = 12;
 
 /// Returns the number of fields in a stored record, or `None` if it is not a map.
@@ -90,6 +91,17 @@ pub fn save_stream(env: &Env, stream_id: u64, stream: &Stream) {
     );
 }
 
+/// Removes a stream record from persistent storage.
+///
+/// Only ever called once a stream is terminal *and* fully settled, so the
+/// record being dropped can no longer be read for a payout. Always use this
+/// instead of calling `.remove` directly so the key strategy stays in one place.
+pub fn remove_stream(env: &Env, stream_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Stream(stream_id));
+}
+
 /// Returns the stream if it exists, `None` otherwise (used by read-only queries).
 pub fn try_load_stream(env: &Env, stream_id: u64) -> Option<Stream> {
     let raw: Option<Val> = env.storage().persistent().get(&DataKey::Stream(stream_id));
@@ -121,6 +133,9 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
         withdrawn_amount: legacy.withdrawn_amount,
         start_time: legacy.start_time,
         last_update_time: legacy.last_update_time,
+        // A pre-v2 record has no cliff, so gating stays off and accrual runs
+        // from creation exactly as it did before the upgrade.
+        cliff_time: None,
         is_active: legacy.is_active,
         paused: legacy.paused,
         paused_at: legacy.paused_at,
@@ -128,6 +143,10 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
         // A stream with no schedule field predates step vesting: it is a
         // continuous drip by construction.
         schedule: VestingSchedule::Linear,
+        // New fields default to no arbiter, no dispute, and non-allowance-based.
+        arbiter: None,
+        dispute_status: DisputeStatus::None,
+        is_allowance_based: false,
     }
 }
 
