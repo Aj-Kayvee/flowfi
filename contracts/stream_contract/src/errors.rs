@@ -69,6 +69,17 @@ pub enum StreamError {
     /// as unclaimable residue. Rejecting is the only option that never lies to
     /// the recipient about when funds become available.
     TopUpUnsupported = 27,
+    /// A checked arithmetic operation overflowed the `i128` or `u64` range.
+    ///
+    /// Raised by the `checked_*` helpers that guard accrual projection, fee
+    /// collection and withdrawal bookkeeping, so an out-of-range amount is
+    /// reported instead of silently wrapping or aborting the invocation.
+    ArithmeticOverflow = 34,
+    /// `resume_stream` was called on a stream that is no longer active.
+    StreamNotActive = 35,
+    /// `close_stream` was called on a stream that is still active or still
+    /// holds unwithdrawn funds, so its record cannot be pruned yet.
+    StreamStillActive = 36,
     /// Rate modification attempted on unsupported schedule type.
     RateModificationUnsupported = 28,
     /// New rate is invalid (e.g., zero or too small).
@@ -81,12 +92,6 @@ pub enum StreamError {
     NotArbiter = 32,
     /// Allowance-based stream operation failed.
     AllowanceLocked = 33,
-    /// Operation requires an active stream, but the stream is inactive (cancelled or completed).
-    StreamNotActive = 34,
-    /// An amount or timestamp calculation exceeded the range of its type.
-    ArithmeticOverflow = 35,
-    /// Operation requires a fully settled stream, but unwithdrawn funds remain.
-    StreamStillActive = 36,
 }
 
 impl StreamError {
