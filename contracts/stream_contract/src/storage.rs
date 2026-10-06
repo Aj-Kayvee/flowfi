@@ -104,7 +104,7 @@ use crate::types::{
 /// here only so the two can be told apart before a decode is attempted.
 const CONFIG_FIELD_COUNT: u32 = 5;
 const LEGACY_CONFIG_FIELD_COUNT: u32 = 3;
-const STREAM_FIELD_COUNT: u32 = 16;
+const STREAM_FIELD_COUNT: u32 = 17;
 const LEGACY_STREAM_FIELD_COUNT: u32 = 12;
 
 /// Returns the number of fields in a stored record, or `None` if it is not a map.
@@ -197,6 +197,17 @@ pub fn save_stream(env: &Env, stream_id: u64, stream: &Stream) {
     );
 }
 
+/// Removes a stream record from persistent storage.
+///
+/// Only ever called once a stream is terminal *and* fully settled, so the
+/// record being dropped can no longer be read for a payout. Always use this
+/// instead of calling `.remove` directly so the key strategy stays in one place.
+pub fn remove_stream(env: &Env, stream_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Stream(stream_id));
+}
+
 /// Returns the stream if it exists, `None` otherwise (used by read-only queries).
 ///
 /// **Key:** `DataKey::Stream(stream_id)` in persistent storage.
@@ -242,6 +253,9 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
         withdrawn_amount: legacy.withdrawn_amount,
         start_time: legacy.start_time,
         last_update_time: legacy.last_update_time,
+        // A pre-v2 record has no cliff, so gating stays off and accrual runs
+        // from creation exactly as it did before the upgrade.
+        cliff_time: None,
         is_active: legacy.is_active,
         paused: legacy.paused,
         paused_at: legacy.paused_at,
