@@ -1,4 +1,4 @@
-﻿extern crate std;
+extern crate std;
 
 use std::string::ToString;
 
@@ -17,11 +17,85 @@ use events::{
     StreamResumedEvent, StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use types::{
-    DataKey, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream, StreamStatus,
-    VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
+    DataKey, DisputeStatus, LegacyProtocolConfig, LegacyStream, ProtocolConfig, Stream,
+    StreamStatus, VestingSchedule, VestingStep, MAX_BATCH_WITHDRAW, MAX_VESTING_STEPS,
 };
 
-// â”€â”€â”€ Test Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/// Minimal fee-token double that reads the stream from inside the treasury
+/// transfer. This makes the fee transfer an actual re-entrancy boundary in the
+/// test instead of a second, sequential public call.
+#[contract]
+struct ReentrantFeeToken;
+
+#[contractimpl]
+impl ReentrantFeeToken {
+    pub fn decimals(_env: Env) -> u32 {
+        7
+    }
+
+    pub fn transfer(env: Env, _from: Address, to: Address, _amount: i128) {
+        if to == env.current_contract_address() {
+            let stream_contract: Address = env
+                .storage()
+                .instance()
+                .get(&Symbol::new(&env, "stream_contract"))
+                .unwrap();
+            // The host forbids re-entering `StreamContract` while it is still on
+            // the call stack, so read the persisted record directly instead of
+            // calling `get_stream`. The ordering assertion is about what had
+            // been written *before* the fee transfer, not about the getter.
+            let observed = env.as_contract(&stream_contract, || {
+                crate::storage::try_load_stream(&env, 1)
+            });
+            env.storage().instance().set(
+                &Symbol::new(&env, "observed_deposit"),
+                &observed.unwrap().deposited_amount,
+            );
+        }
+    }
+}
+
+#[test]
+fn test_fee_transfer_observes_persisted_stream_on_create_and_top_up() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token = env.register(ReentrantFeeToken, ());
+    let client = create_contract(&env);
+    env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "stream_contract"), &client.address);
+    });
+
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    client.initialize(&Address::generate(&env), &token, &500);
+
+    let stream_id = client.create_stream(&sender, &recipient, &token, &1_000, &100);
+    assert_eq!(stream_id, 1);
+    let observed_create_deposit: i128 = env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "observed_deposit"))
+            .unwrap()
+    });
+    assert_eq!(observed_create_deposit, 950);
+
+    client.top_up_stream(&sender, &stream_id, &500);
+    let observed_top_up_deposit: i128 = env.as_contract(&token, || {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "observed_deposit"))
+            .unwrap()
+    });
+    assert_eq!(observed_top_up_deposit, 1_425);
+}
+// NOTE: fee-transfer CEI (persist before transfer) is verified via
+// post-call state/events, not via re-entrant callback: Soroban hosts
+// forbid contract re-entry ("Contract re-entry is not allowed"), so a
+// fee token cannot call back into get_stream during transfer.
+
+// ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 /// Registers a Stellar asset contract and returns (token_address, token_admin).
 fn create_token(env: &Env) -> (Address, Address) {
@@ -45,7 +119,7 @@ fn mint(env: &Env, token_address: &Address, recipient: &Address, amount: i128) {
 /// Builds a step-tranche schedule from `(unlock_time, unlock_amount)` pairs.
 ///
 /// `vec!` only accepts what it can hand to `Vec::from_array`, so the steps are
-/// pushed individually â€” which also keeps the test call sites readable.
+/// pushed individually — which also keeps the test call sites readable.
 fn step_schedule(env: &Env, steps: &[(u64, i128)]) -> SorobanVec<VestingStep> {
     let mut schedule = SorobanVec::new(env);
     for (unlock_time, unlock_amount) in steps {
@@ -62,7 +136,7 @@ fn advance(env: &Env, seconds: u64) {
     env.ledger().with_mut(|l| l.timestamp += seconds);
 }
 
-// â”€â”€â”€ DataKey Serialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── DataKey Serialization ────────────────────────────────────────────────────
 
 #[test]
 fn test_datakey_stream_serializes_deterministically() {
@@ -99,6 +173,9 @@ fn test_datakey_stream_serializes_deterministically() {
         paused_at: None,
         status: StreamStatus::Active,
         schedule: VestingSchedule::Linear,
+        arbiter: None,
+        dispute_status: DisputeStatus::None,
+        is_allowance_based: false,
     };
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&key, &stream);
@@ -115,7 +192,7 @@ fn test_datakey_stream_counter_serializes_deterministically() {
     assert_eq!(scval_a, scval_b);
 }
 
-// â”€â”€â”€ Protocol Initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Protocol Initialization ──────────────────────────────────────────────────
 
 #[test]
 fn test_initialize_stores_config() {
@@ -279,7 +356,7 @@ fn test_update_fee_config_emits_event() {
     assert_eq!(payload.new_fee_rate_bps, 300);
 }
 
-// â”€â”€â”€ create_stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── create_stream ────────────────────────────────────────────────────────────
 
 #[test]
 fn test_create_stream_persists_state() {
@@ -413,7 +490,7 @@ fn test_create_stream_emits_event() {
     assert_eq!(payload.rate_per_second, 5);
 }
 
-// â”€â”€â”€ #796 start_time / backdated timestamp guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── #796 start_time / backdated timestamp guard ──────────────────────────────
 //
 // `create_stream` always derives `start_time` from `env.ledger().timestamp()`
 // (see lib.rs:201). The contract does NOT accept a caller-supplied start_time,
@@ -456,8 +533,8 @@ fn test_backdated_start_time_would_immediately_vest_full_amount() {
     let stream_id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
 
     // Simulate a backdated start_time by directly manipulating storage.
-    // This is NOT possible through the public API â€” the contract always uses
-    // env.ledger().timestamp() â€” but it demonstrates the risk that would exist
+    // This is NOT possible through the public API — the contract always uses
+    // env.ledger().timestamp() — but it demonstrates the risk that would exist
     // if a caller-supplied start_time were ever added.
     let mut stream = client.get_stream(&stream_id).unwrap();
     stream.start_time = 0; // backdated far into the past
@@ -472,7 +549,7 @@ fn test_backdated_start_time_would_immediately_vest_full_amount() {
     env.ledger().with_mut(|l| l.timestamp += 10_000);
 
     // The full deposited_amout would be immediately claimable because the
-    // elapsed time (start_time=0 â†’ now=10_000) far exceeds the duration.
+    // elapsed time (start_time=0 → now=10_000) far exceeds the duration.
     let claimable = client.get_claimable_amount(&stream_id).unwrap();
     assert_eq!(claimable, 1_000);
 
@@ -481,7 +558,7 @@ fn test_backdated_start_time_would_immediately_vest_full_amount() {
     // cannot occur via the public API.
 }
 
-// â”€â”€â”€ top_up_stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── top_up_stream ────────────────────────────────────────────────────────────
 
 #[test]
 fn test_top_up_increases_deposited_amount() {
@@ -649,14 +726,14 @@ fn test_top_up_then_cancel_pays_pre_topup_accrued() {
     let token_client = token::Client::new(&env, &token);
     let recipient_balance_before = token_client.balance(&recipient);
 
-    // Cancel immediately after the top-up â€” no further time should accrue.
+    // Cancel immediately after the top-up — no further time should accrue.
     client.cancel_stream(&sender, &id);
 
     let recipient_balance_after = token_client.balance(&recipient);
     assert_eq!(recipient_balance_after - recipient_balance_before, 900);
 }
 
-// â”€â”€â”€ withdraw â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── withdraw ────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_withdraw_transfers_tokens_to_recipient() {
@@ -771,7 +848,7 @@ fn test_withdraw_emits_event() {
     assert_eq!(payload.amount, 500);
 }
 
-// â”€â”€â”€ cancel_stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── cancel_stream ────────────────────────────────────────────────────────────
 
 #[test]
 fn test_cancel_stream_refunds_unspent_balance() {
@@ -874,7 +951,7 @@ fn test_cancel_stream_emits_event_with_refund_amount() {
     assert_eq!(payload.refunded_amount, 500);
 }
 
-// â”€â”€â”€ Protocol Fee Integration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Protocol Fee Integration ─────────────────────────────────────────────────
 
 #[test]
 fn test_create_stream_with_fee_deduction() {
@@ -968,7 +1045,7 @@ fn test_no_fee_event_when_fee_rate_is_zero() {
 
     let client = create_contract(&env);
 
-    // 0 bps fee â€” no fee_collected event must be emitted.
+    // 0 bps fee — no fee_collected event must be emitted.
     client.initialize(&admin, &treasury, &0);
     client.create_stream(&sender, &Address::generate(&env), &token, &1_000, &100);
 
@@ -1025,7 +1102,7 @@ fn test_no_fee_without_protocol_config() {
     let sender = Address::generate(&env);
     mint(&env, &token, &sender, 1_000);
 
-    // No `initialize` call â€” fee collection is a silent no-op.
+    // No `initialize` call — fee collection is a silent no-op.
     let client = create_contract(&env);
     let id = client.create_stream(&sender, &Address::generate(&env), &token, &500, &100);
 
@@ -1235,7 +1312,7 @@ fn test_claimable_max_i128_rate_overflow() {
     assert_eq!(withdrawn, 1_000);
 }
 
-// â”€â”€â”€ #795 calculate_claimable underflow guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── #795 calculate_claimable underflow guard ─────────────────────────────────
 
 #[test]
 fn test_calculate_claimable_underflow_returns_zero() {
@@ -1265,7 +1342,7 @@ fn test_calculate_claimable_underflow_returns_zero() {
     assert_eq!(claimable, 0);
 }
 
-// â”€â”€â”€ #232 create_stream edge cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── #232 create_stream edge cases ───────────────────────────────────────────
 
 #[test]
 fn test_create_stream_minimum_amount() {
@@ -1326,7 +1403,7 @@ fn test_create_stream_invalid_token() {
     env.mock_all_auths();
     let client = create_contract(&env);
 
-    // A plain account address is not a SAC â€” must return InvalidTokenAddress.
+    // A plain account address is not a SAC — must return InvalidTokenAddress.
     let result = client.try_create_stream(
         &Address::generate(&env),
         &Address::generate(&env),
@@ -1356,7 +1433,7 @@ fn test_create_stream_self_stream() {
 
 #[test]
 fn test_create_stream_zero_rate() {
-    // amount < duration â†’ rate_per_second rounds to 0; must now be rejected.
+    // amount < duration → rate_per_second rounds to 0; must now be rejected.
     let env = Env::default();
     env.mock_all_auths();
     let (token, _) = create_token(&env);
@@ -1370,7 +1447,7 @@ fn test_create_stream_zero_rate() {
 
 #[test]
 fn test_create_stream_rate_exactly_one_succeeds() {
-    // amount == duration â†’ rate = 1, which is the smallest valid rate.
+    // amount == duration → rate = 1, which is the smallest valid rate.
     let env = Env::default();
     env.mock_all_auths();
     let (token, _) = create_token(&env);
@@ -1403,7 +1480,7 @@ fn test_stream_id_uniqueness() {
     assert!(client.get_stream(&id2).is_some());
 }
 
-// â”€â”€â”€ #233 withdraw / top_up / cancel lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── #233 withdraw / top_up / cancel lifecycle ───────────────────────────────
 
 #[test]
 fn test_withdraw_accrued_amount() {
@@ -1427,7 +1504,7 @@ fn test_withdraw_accrued_amount() {
 
 #[test]
 fn test_withdraw_zero_balance() {
-    // Withdraw before any time elapses â†’ InvalidAmount.
+    // Withdraw before any time elapses → InvalidAmount.
     let env = Env::default();
     env.mock_all_auths();
     let (token, _) = create_token(&env);
@@ -1490,7 +1567,7 @@ fn test_withdraw_rejects_double_withdraw_after_completion() {
     assert!(!s.is_active);
     assert_eq!(s.status, StreamStatus::Completed);
 
-    // Try to withdraw again â€” should return StreamInactive error.
+    // Try to withdraw again — should return StreamInactive error.
     assert_eq!(
         client.try_withdraw(&recipient, &id),
         Err(Ok(StreamError::StreamInactive))
@@ -1599,7 +1676,7 @@ fn test_cancel_after_completion() {
     );
 }
 
-// â”€â”€â”€ #234 pause / resume â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── #234 pause / resume ─────────────────────────────────────────────────────
 
 #[test]
 fn test_pause_stops_accrual() {
@@ -1617,7 +1694,7 @@ fn test_pause_stops_accrual() {
     env.ledger().with_mut(|l| l.timestamp += 100);
     client.pause_stream(&sender, &id);
 
-    // Advance more time â€” should not accrue while paused.
+    // Advance more time — should not accrue while paused.
     env.ledger().with_mut(|l| l.timestamp += 200);
     assert_eq!(client.get_claimable_amount(&id), Some(100));
 
@@ -1650,7 +1727,7 @@ fn test_resume_adjusts_end_time() {
     assert!(!s.paused);
     assert_eq!(s.status, StreamStatus::Active);
 
-    // Advance 100 more seconds â€” should accrue 100 tokens (not 400).
+    // Advance 100 more seconds — should accrue 100 tokens (not 400).
     env.ledger().with_mut(|l| l.timestamp += 100);
     assert_eq!(client.get_claimable_amount(&id), Some(200)); // 100 before pause + 100 after
 }
@@ -1784,7 +1861,7 @@ fn test_withdraw_on_paused_stream_fails() {
     );
 }
 
-// â”€â”€â”€ #235 stream completion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── #235 stream completion ───────────────────────────────────────────────────
 
 #[test]
 fn test_final_withdrawal_transitions_to_completed() {
@@ -2016,7 +2093,7 @@ fn test_withdraw_after_long_stream_runtime_is_bounded() {
     assert!(withdrawn <= 5_000);
 }
 
-// â”€â”€â”€ Property-Based Fuzz Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Property-Based Fuzz Tests ────────────────────────────────────────────────
 
 #[test]
 fn test_fuzz_withdrawn_never_exceeds_deposited() {
@@ -2143,7 +2220,7 @@ fn test_resume_on_cancelled_stream_fails() {
     env.ledger().with_mut(|l| l.timestamp += 300);
     client.pause_stream(&sender, &id);
 
-    // Cancel the paused stream â€” this should set is_active=false and status=Cancelled,
+    // Cancel the paused stream — this should set is_active=false and status=Cancelled,
     // but previously would leave paused=true, allowing a subsequent resume to corrupt state.
     client.cancel_stream(&sender, &id);
 
@@ -2151,8 +2228,8 @@ fn test_resume_on_cancelled_stream_fails() {
     let result = client.try_resume_stream(&sender, &id);
     assert_eq!(
         result,
-        Err(Ok(StreamError::StreamInactive)),
-        "resume_stream must return StreamInactive on an inactive stream"
+        Err(Ok(StreamError::StreamNotActive)),
+        "resume_stream must return StreamNotActive on an inactive stream"
     );
 
     // Stream state must be unchanged: still cancelled, not resumed.
@@ -2293,6 +2370,9 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
                 None
             },
             schedule: VestingSchedule::Linear,
+            arbiter: None,
+            dispute_status: DisputeStatus::None,
+            is_allowance_based: false,
             status: if paused {
                 StreamStatus::Paused
             } else {
@@ -2330,7 +2410,7 @@ fn test_fuzz_claimable_overflow_and_cancel_invariants() {
     }
 }
 
-// â”€â”€â”€ transfer_admin (#459) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── transfer_admin (#459) ─────────────────────────────────────────────────────
 
 #[test]
 fn test_transfer_admin_succeeds() {
@@ -2430,7 +2510,7 @@ fn test_transfer_admin_emits_event() {
     assert_eq!(payload.new_admin, new_admin);
 }
 
-// â”€â”€â”€ pause_stream / resume_stream (#462) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── pause_stream / resume_stream (#462) ─────────────────────────────────────
 
 #[test]
 fn test_pause_stops_accrual_462() {
@@ -2443,14 +2523,14 @@ fn test_pause_stops_accrual_462() {
 
     let client = create_contract(&env);
 
-    // Stream: 1 000 tokens over 1 000 s â†’ 1 token/s
+    // Stream: 1 000 tokens over 1 000 s → 1 token/s
     let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
 
-    // Advance 200 s before pause â€” 200 tokens accrued.
+    // Advance 200 s before pause — 200 tokens accrued.
     env.ledger().with_mut(|l| l.timestamp += 200);
     client.pause_stream(&sender, &id);
 
-    // Advance another 300 s while paused â€” accrual must NOT increase.
+    // Advance another 300 s while paused — accrual must NOT increase.
     env.ledger().with_mut(|l| l.timestamp += 300);
 
     // Verify stream state: paused flag is set.
@@ -2460,9 +2540,9 @@ fn test_pause_stops_accrual_462() {
     // Advance 100 more seconds; stream is still paused, accrual still frozen.
     env.ledger().with_mut(|l| l.timestamp += 100);
 
-    // Expect paused_at (200 s mark) â†’ last_update_time (also 200 s mark) â†’ elapsed = 0
+    // Expect paused_at (200 s mark) → last_update_time (also 200 s mark) → elapsed = 0
     // So claimable should be the 0 s elapsed since paused_at.
-    // (Withdraw must be rejected on a paused stream â€” tested separately.)
+    // (Withdraw must be rejected on a paused stream — tested separately.)
 }
 
 #[test]
@@ -2533,14 +2613,14 @@ fn test_cancel_paused_stream_settles_at_paused_at() {
     let client = create_contract(&env);
     let token_client = token::Client::new(&env, &token);
 
-    // Stream: 1 000 tokens over 1 000 s â†’ 1 token/s
+    // Stream: 1 000 tokens over 1 000 s → 1 token/s
     let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
 
-    // Advance 300 s â€” 300 tokens accrued.
+    // Advance 300 s — 300 tokens accrued.
     env.ledger().with_mut(|l| l.timestamp += 300);
     client.pause_stream(&sender, &id);
 
-    // Advance 200 more s while paused â€” accrual must NOT count this time.
+    // Advance 200 more s while paused — accrual must NOT count this time.
     env.ledger().with_mut(|l| l.timestamp += 200);
 
     let sender_before = token_client.balance(&sender);
@@ -2549,7 +2629,7 @@ fn test_cancel_paused_stream_settles_at_paused_at() {
     client.cancel_stream(&sender, &id);
 
     let sender_after = token_client.balance(&sender);
-    // Sender must be refunded the non-accrued portion: 1 000 âˆ’ 300 = 700.
+    // Sender must be refunded the non-accrued portion: 1 000 − 300 = 700.
     assert_eq!(sender_after - sender_before, 700);
 
     let s = client.get_stream(&id).unwrap();
@@ -2602,17 +2682,17 @@ fn test_resume_then_cancel_settles_across_pause_boundary() {
     let client = create_contract(&env);
     let token_client = token::Client::new(&env, &token);
 
-    // Stream: 1 000 tokens / 1 000 s â†’ 1 token/s
+    // Stream: 1 000 tokens / 1 000 s → 1 token/s
     let id = client.create_stream(&sender, &recipient, &token, &1_000, &1_000);
 
-    // Phase 1: 200 s of streaming â†’ 200 tokens accrued.
+    // Phase 1: 200 s of streaming → 200 tokens accrued.
     env.ledger().with_mut(|l| l.timestamp += 200);
 
     // Phase 2: pause for 150 s (no extra accrual).
     client.pause_stream(&sender, &id);
     env.ledger().with_mut(|l| l.timestamp += 150);
 
-    // Phase 3: resume and stream for another 100 s â†’ 100 additional tokens.
+    // Phase 3: resume and stream for another 100 s → 100 additional tokens.
     client.resume_stream(&sender, &id);
     env.ledger().with_mut(|l| l.timestamp += 100);
 
@@ -2620,7 +2700,7 @@ fn test_resume_then_cancel_settles_across_pause_boundary() {
     client.cancel_stream(&sender, &id);
     let sender_after = token_client.balance(&sender);
 
-    // Total accrued = 200 + 100 = 300. Refund = 1 000 âˆ’ 300 = 700.
+    // Total accrued = 200 + 100 = 300. Refund = 1 000 − 300 = 700.
     assert_eq!(sender_after - sender_before, 700);
 }
 
@@ -2686,7 +2766,7 @@ fn test_resume_stream_emits_event() {
     assert_eq!(payload.new_end_time, 1050);
 }
 
-// â”€â”€â”€ CEI / reentrancy regression (#789) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── CEI / reentrancy regression (#789) ──────────────────────────────────────
 
 /// Verify that stream state is committed to storage before the token transfer,
 /// so that a re-entrant call (e.g. from a malicious token hook) at the same
@@ -2759,7 +2839,7 @@ fn test_cancel_state_committed_before_transfers_prevents_double_cancel() {
     );
 }
 
-// â”€â”€â”€ Event Wire Format Regression Guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Event Wire Format Regression Guard ───────────────────────────────────────
 //
 // Pins the exact Map field names emitted for each event's `data` payload, as
 // read by `decodeMap()` in `backend/src/workers/soroban-event-worker.ts`. If a
@@ -2779,7 +2859,7 @@ fn event_field_names(env: &Env, payload: &soroban_sdk::Val) -> std::vec::Vec<std
     names
 }
 
-// â”€â”€â”€ Concurrent streams (same sender/recipient/token) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Concurrent streams (same sender/recipient/token) ─────────────────────────
 
 #[test]
 fn test_concurrent_streams_same_tuple_independent_state() {
@@ -2823,7 +2903,7 @@ fn test_concurrent_streams_same_tuple_independent_state() {
     assert_eq!(s1_final.withdrawn_amount, 500);
 }
 
-// â”€â”€â”€ Cumulative fee rounding drift â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Cumulative fee rounding drift ────────────────────────────────────────────
 //
 // The protocol fee uses integer division: fee = amount * fee_rate_bps / 10_000.
 // When many small deposits are made sequentially, each individual fee may round
@@ -2831,7 +2911,7 @@ fn test_concurrent_streams_same_tuple_independent_state() {
 // slightly less than fee_rate_bps/10_000 of the gross total. This test verifies
 // the drift stays within an acceptable tolerance.
 //
-// Rounding direction: favours the user (the protocol receives â‰¤ the ideal fee).
+// Rounding direction: favours the user (the protocol receives ≤ the ideal fee).
 
 #[test]
 fn test_cumulative_fee_rounding_drift() {
@@ -2865,14 +2945,14 @@ fn test_cumulative_fee_rounding_drift() {
     let ideal_fee = (total_gross * fee_rate_bps as i128) / 10_000;
     let actual_fee = token_client.balance(&treasury);
 
-    // Each individual top-up of 101 * 199 / 10000 = 2.0099 â†’ 2, losing 0.0099 per op.
-    // Over 200 ops: at most 200 * 0.0099 â‰ˆ 1.98 tokens of downward drift.
+    // Each individual top-up of 101 * 199 / 10000 = 2.0099 → 2, losing 0.0099 per op.
+    // Over 200 ops: at most 200 * 0.0099 ≈ 1.98 tokens of downward drift.
     // Allow tolerance of 2 tokens (enforced by `max_drift`).
     let max_drift = top_up_count as i128;
     let drift = ideal_fee - actual_fee;
     assert!(
         drift >= 0,
-        "Fee collected ({}) exceeds ideal ({}) â€” rounding favoured protocol (unexpected)",
+        "Fee collected ({}) exceeds ideal ({}) — rounding favoured protocol (unexpected)",
         actual_fee,
         ideal_fee
     );
@@ -2882,7 +2962,7 @@ fn test_cumulative_fee_rounding_drift() {
     );
 }
 
-// â”€â”€â”€ update_fee_config ceiling enforcement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── update_fee_config ceiling enforcement ─────────────────────────────────────
 //
 // The existing test `test_update_fee_config_rejects_invalid_fee_rate` at line 171
 // already verifies that `update_fee_config` rejects a rate above MAX_FEE_RATE_BPS
@@ -2937,9 +3017,9 @@ fn test_stream_created_event_field_names_match_decoder_expectations() {
     );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// F1 â€” Protocol Circuit Breaker
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// F1 — Protocol Circuit Breaker
+// ═══════════════════════════════════════════════════════════════════════════
 
 /// Builds a token, an initialized protocol, and an admin/guardian/outsider trio.
 ///
@@ -3290,7 +3370,6 @@ fn test_unpause_restores_creations_and_top_ups() {
     client.top_up_stream(&sender, &id, &500);
     let created = client.create_stream(&sender, &Address::generate(&env), &token, &500, &500);
     assert!(created > id);
-
     assert_eq!(client.get_stream(&id).unwrap().deposited_amount, 1_500);
 }
 
@@ -3308,7 +3387,7 @@ fn test_pause_does_not_freeze_existing_stream_accrual() {
     advance(&env, 50);
 
     // The breaker gates new money in, it does not stop time for existing
-    // streams â€” otherwise a pause would silently forfeit vested wages.
+    // streams — otherwise a pause would silently forfeit vested wages.
     assert_eq!(client.get_claimable_amount(&id), Some(100));
 }
 
@@ -3368,16 +3447,16 @@ fn test_guardian_role_is_revocable_by_new_admin() {
     let new_admin = Address::generate(&env);
 
     client.transfer_admin(&admin, &new_admin);
-    // The guardian slot is carried over, so the guardian can still trip â€” but
+    // The guardian slot is carried over, so the guardian can still trip — but
     // it can never clear, and a new admin can drop the role at will.
     client.set_protocol_pause(&guardian, &true);
     client.set_emergency_guardian(&new_admin, &None);
     assert!(client.is_protocol_paused());
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// F2 â€” Milestone (Step-Tranche) Vesting
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// F2 — Milestone (Step-Tranche) Vesting
+// ═══════════════════════════════════════════════════════════════════════════
 
 /// Creates a funded step-tranche stream and returns its ID.
 ///
@@ -3820,7 +3899,7 @@ fn test_step_vesting_with_fee_must_sum_to_net_amount() {
     // 1% fee: a 1_000 deposit nets 990.
     client.initialize(&admin, &treasury, &100);
 
-    // Steps summing to the gross 1_000 must fail â€” they overshoot the net 990.
+    // Steps summing to the gross 1_000 must fail — they overshoot the net 990.
     let gross_steps = step_schedule(&env, &[(100, 1_000)]);
     assert_eq!(
         client.try_create_step_vesting_stream(&sender, &recipient, &token, &1_000, &gross_steps),
@@ -4171,7 +4250,7 @@ fn test_step_vesting_claimable_never_exceeds_remaining_across_many_polls() {
     assert!(client.is_stream_completed(&id));
 }
 
-// â”€â”€â”€ Hybrid cliff + linear â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Hybrid cliff + linear ─────────────────────────────────────────────────
 
 #[test]
 fn test_hybrid_cliff_holds_everything_until_the_cliff() {
@@ -4381,7 +4460,7 @@ fn test_hybrid_cliff_allows_top_up_and_extends_tail() {
         client.create_hybrid_cliff_stream(&sender, &recipient, &token, &1_000, &500, &400, &600);
 
     // Unlike a step schedule, extra deposit here just extends the tail at the
-    // same rate â€” no invariant is broken.
+    // same rate — no invariant is broken.
     client.top_up_stream(&sender, &id, &600);
     assert_eq!(client.get_stream(&id).unwrap().deposited_amount, 1_600);
 
@@ -4389,9 +4468,9 @@ fn test_hybrid_cliff_allows_top_up_and_extends_tail() {
     assert_eq!(client.get_claimable_amount(&id), Some(1_600));
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// F3 â€” In-Place Upgrades & State Migration
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// F3 — In-Place Upgrades & State Migration
+// ═══════════════════════════════════════════════════════════════════════════
 
 /// A real, valid contract Wasm used as an in-place upgrade target.
 ///
@@ -4509,8 +4588,10 @@ fn raw_stream_field_count(env: &Env, contract: &Address, stream_id: u64) -> u32 
 
 /// True when the raw record at `stream_id` decodes as the current [`Stream`].
 fn stream_record_is_current_shape(env: &Env, contract: &Address, stream_id: u64) -> bool {
-    // `Stream` carries the `schedule` field; `LegacyStream` does not.
-    raw_stream_field_count(env, contract, stream_id) == 13
+    // The current `Stream` shape is 17 fields: `LegacyStream` carries neither
+    // `schedule`/`cliff_time` nor the dispute/allowance fields.
+    // `Stream` now carries cliff_time + arbiter/dispute/allowance fields (17 total); `LegacyStream` has 12.
+    raw_stream_field_count(env, contract, stream_id) == 17
 }
 
 /// True when the raw record at `stream_id` decodes as the pre-v2 [`LegacyStream`].
@@ -4534,7 +4615,7 @@ fn config_record_is_current_shape(env: &Env, contract: &Address) -> bool {
     })
 }
 
-// â”€â”€â”€ Version Pinning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Version Pinning ─────────────────────────────────────────────────────────
 
 #[test]
 fn test_initialize_pins_state_version_two() {
@@ -4563,7 +4644,7 @@ fn test_initialize_rejects_double_initialize() {
     assert_eq!(client.get_contract_version(), 2);
 }
 
-// â”€â”€â”€ upgrade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── upgrade ──────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_upgrade_records_new_executable_hash() {
@@ -4688,7 +4769,7 @@ fn test_upgrade_requires_admin_auth_and_records_no_hash_without_it() {
     client.initialize(&admin, &Address::generate(&env), &0);
     let hash = upload_upgrade_target(&env);
 
-    // `upgrade` takes no caller argument â€” it gates on `config.admin`'s
+    // `upgrade` takes no caller argument — it gates on `config.admin`'s
     // `require_auth`, so withholding the admin's signature is the only way a
     // non-admin can reach it, and the call must fail without side effects.
     env.set_auths(&[]);
@@ -4770,7 +4851,7 @@ fn test_upgrade_to_identical_wasm_keeps_state_readable() {
     assert_eq!(client.withdraw(&recipient, &id), 100);
 }
 
-// â”€â”€â”€ migrate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── migrate ──────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_migrate_requires_admin_auth_and_changes_nothing_without_it() {
@@ -4782,7 +4863,7 @@ fn test_migrate_requires_admin_auth_and_changes_nothing_without_it() {
     client.initialize(&admin, &Address::generate(&env), &0);
     downgrade_state_to_v0(&env, &contract);
 
-    // `migrate` takes no caller argument â€” it gates on `config.admin`'s
+    // `migrate` takes no caller argument — it gates on `config.admin`'s
     // `require_auth`, so withholding the admin's signature is the only way a
     // non-admin can reach it, and the call must fail without side effects.
     env.set_auths(&[]);
@@ -4941,7 +5022,7 @@ fn test_migrate_from_v1_rewrites_config() {
     assert!(config_record_is_current_shape(&env, &contract));
 }
 
-// â”€â”€â”€ Lazy Legacy Decoding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Lazy Legacy Decoding ────────────────────────────────────────────────────
 
 #[test]
 fn test_legacy_config_decodes_with_breaker_defaults() {
@@ -4987,7 +5068,7 @@ fn test_legacy_config_is_writable_through_the_breaker_api() {
 
     client.migrate(&2);
     assert_eq!(client.get_contract_version(), 2);
-    // Pause survives the explicit migration â€” it is in force, not a draft.
+    // Pause survives the explicit migration — it is in force, not a draft.
     assert!(client.is_protocol_paused());
     assert_eq!(
         client.get_fee_config().unwrap().emergency_guardian,
@@ -5010,7 +5091,7 @@ fn test_legacy_config_still_charges_fees_before_migration() {
 
     downgrade_state_to_v0(&env, &contract);
     // 10_000 at 1% nets 9_900, which spreads to 9/s over 1_000s. (A 1_000
-    // deposit would net 990 â€” a 0/s rate, rejected as `InvalidRate`.)
+    // deposit would net 990 — a 0/s rate, rejected as `InvalidRate`.)
     let id = client.create_stream(&sender, &Address::generate(&env), &token, &10_000, &1_000);
 
     // Fee collection reads the config through the same tolerant loader; losing
@@ -5189,9 +5270,9 @@ fn test_legacy_records_survive_a_real_upgrade() {
     });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// F4 â€” Batch Withdrawals
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// F4 — Batch Withdrawals
+// ═══════════════════════════════════════════════════════════════════════════
 
 /// Creates `count` linear streams of `deposit` over `duration`, all owed to
 /// `recipient`, and returns their IDs.

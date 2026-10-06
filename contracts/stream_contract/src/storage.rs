@@ -15,7 +15,7 @@ use crate::types::{
     VestingSchedule,
 };
 
-// â”€â”€â”€ Version-Tolerant Decoding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Version-Tolerant Decoding ────────────────────────────────────────────────
 
 /// Field counts of the current and pre-v3 record shapes.
 ///
@@ -24,7 +24,7 @@ use crate::types::{
 /// here only so the two can be told apart before a decode is attempted.
 const CONFIG_FIELD_COUNT: u32 = 5;
 const LEGACY_CONFIG_FIELD_COUNT: u32 = 3;
-const STREAM_FIELD_COUNT: u32 = 16;
+const STREAM_FIELD_COUNT: u32 = 17;
 const LEGACY_STREAM_FIELD_COUNT: u32 = 12;
 
 /// Returns the number of fields in a stored record, or `None` if it is not a map.
@@ -41,7 +41,7 @@ fn record_field_count(env: &Env, raw: &Val) -> Option<u32> {
         .map(|m| m.len())
 }
 
-// â”€â”€â”€ Stream Counter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Stream Counter ───────────────────────────────────────────────────────────
 
 /// Returns the next stream ID and persists the updated counter.
 ///
@@ -61,14 +61,14 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
-// â”€â”€â”€ Stream CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Stream CRUD ─────────────────────────────────────────────────────────────
 
 /// Loads a stream by ID from persistent storage, tolerating the legacy shape.
 ///
 /// A pre-v2 record has no `schedule` field, so decoding it as the current
 /// [`Stream`] fails. Rather than bricking escrowed funds after an in-place code
 /// upgrade, fall back to [`LegacyStream`] and report it as the linear drip it
-/// was created as. The upgraded record is not written back here â€” the next
+/// was created as. The upgraded record is not written back here — the next
 /// `save_stream` for that ID persists the current shape, which is how
 /// `migrate`'s lazy per-stream healing works.
 ///
@@ -90,10 +90,16 @@ pub fn save_stream(env: &Env, stream_id: u64, stream: &Stream) {
         PERSISTENT_BUMP_AMOUNT,
     );
 }
+
 /// Removes a stream record from persistent storage.
+///
+/// Only ever called once a stream is terminal *and* fully settled, so the
+/// record being dropped can no longer be read for a payout. Always use this
+/// instead of calling `.remove` directly so the key strategy stays in one place.
 pub fn remove_stream(env: &Env, stream_id: u64) {
-    let key = DataKey::Stream(stream_id);
-    env.storage().persistent().remove(&key);
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Stream(stream_id));
 }
 
 /// Returns the stream if it exists, `None` otherwise (used by read-only queries).
@@ -127,13 +133,15 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
         withdrawn_amount: legacy.withdrawn_amount,
         start_time: legacy.start_time,
         last_update_time: legacy.last_update_time,
+        // A pre-v2 record has no cliff, so gating stays off and accrual runs
+        // from creation exactly as it did before the upgrade.
+        cliff_time: None,
         is_active: legacy.is_active,
         paused: legacy.paused,
         paused_at: legacy.paused_at,
         status: legacy.status,
         // A stream with no schedule field predates step vesting: it is a
         // continuous drip by construction.
-        cliff_time: None,
         schedule: VestingSchedule::Linear,
         // New fields default to no arbiter, no dispute, and non-allowance-based.
         arbiter: None,
@@ -142,7 +150,7 @@ fn upgrade_legacy_stream(legacy: LegacyStream) -> Stream {
     }
 }
 
-// â”€â”€â”€ Protocol Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Protocol Config ──────────────────────────────────────────────────────────
 
 /// Checks whether the protocol config has already been initialized.
 pub fn config_exists(env: &Env) -> bool {
@@ -154,16 +162,16 @@ pub fn config_exists(env: &Env) -> bool {
 /// An older deployment persisted a three-field [`LegacyProtocolConfig`]. A
 /// `#[contracttype]` struct decodes field-by-field from a Soroban `Map`, so
 /// reading the five-field [`ProtocolConfig`] out of a legacy record does not
-/// fail cleanly â€” see [`record_field_count`]. Rather than bricking the contract
+/// fail cleanly — see [`record_field_count`]. Rather than bricking the contract
 /// after an in-place code upgrade, the record's field count selects the legacy
 /// shape and reports it with the safe defaults `is_protocol_paused: false` and
 /// `emergency_guardian: None`.
 ///
-/// The upgraded value is *not* written back here â€” `load_config` is read-only.
+/// The upgraded value is *not* written back here — `load_config` is read-only.
 /// [`crate::StreamContract::migrate`] performs the actual persisted upgrade.
 ///
 /// # Errors
-/// - `NotInitialized` â€” no config present in either shape.
+/// - `NotInitialized` — no config present in either shape.
 pub fn load_config(env: &Env) -> Result<ProtocolConfig, StreamError> {
     try_load_config(env).ok_or(StreamError::NotInitialized)
 }
@@ -205,7 +213,7 @@ pub fn save_config(env: &Env, config: &ProtocolConfig) {
         .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
-// â”€â”€â”€ State Schema Versioning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── State Schema Versioning ──────────────────────────────────────────────────
 
 /// Reads the persisted state schema version.
 ///
@@ -225,7 +233,7 @@ pub fn save_contract_version(env: &Env, version: u32) {
         .set(&DataKey::ContractVersion, &version);
 }
 
-// â”€â”€â”€ Executable Hash Tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Executable Hash Tracking ─────────────────────────────────────────────────
 
 /// Reads the executable hash recorded by the most recent `upgrade`.
 ///
