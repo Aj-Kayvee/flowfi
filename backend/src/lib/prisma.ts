@@ -23,7 +23,7 @@ const log =
 const primaryClient =
   globalForPrisma.primaryClient ||
   new PrismaClient({
-    adapter: new PrismaPg(globalForPrisma.pool),
+    adapter: new PrismaPg(globalForPrisma.pool as unknown as ConstructorParameters<typeof PrismaPg>[0]),
     log: [...log],
   });
 globalForPrisma.primaryClient = primaryClient;
@@ -32,7 +32,7 @@ const readReplicaUrl = process.env.DATABASE_READ_REPLICA_URL?.trim();
 if (readReplicaUrl && !globalForPrisma.readReplicaClient) {
   globalForPrisma.readReplicaPool = createPgPool({ connectionString: readReplicaUrl });
   globalForPrisma.readReplicaClient = new PrismaClient({
-    adapter: new PrismaPg(globalForPrisma.readReplicaPool),
+    adapter: new PrismaPg(globalForPrisma.readReplicaPool as unknown as ConstructorParameters<typeof PrismaPg>[0]),
     log: [...log],
   });
 }

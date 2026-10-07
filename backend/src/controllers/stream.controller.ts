@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { Prisma } from "../generated/prisma/index.js";
-import { prisma } from "../lib/prisma.js";
+import { prisma, withReplicaFallback } from "../lib/prisma.js";
 import logger from "../logger.js";
 import { claimableAmountService } from "../services/claimable.service.js";
 import {

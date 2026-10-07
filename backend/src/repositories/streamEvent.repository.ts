@@ -1,4 +1,4 @@
-import { prisma } from "../lib/prisma.js";
+import { withReplicaFallback } from "../lib/prisma.js";
 import type { Prisma } from "../generated/prisma/index.js";
 
 /**
