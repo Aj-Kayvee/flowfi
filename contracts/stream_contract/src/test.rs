@@ -3290,11 +3290,8 @@ fn test_unpause_restores_creations_and_top_ups() {
     client.top_up_stream(&sender, &id, &500);
     let created = client.create_stream(&sender, &Address::generate(&env), &token, &500, &500);
     assert!(created > id);
-74
 
-74
 
-74
 
     assert_eq!(client.get_stream(&id).unwrap().deposited_amount, 1_500);
 }
