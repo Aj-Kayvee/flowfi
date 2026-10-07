@@ -20,7 +20,6 @@ const eslintConfig = defineConfig([
     ignores: ["src/lib/logger.ts"],
     rules: {
       "no-console": "error",
-      "react-hooks/set-state-in-effect": "warn",
     },
   },
 ]);
