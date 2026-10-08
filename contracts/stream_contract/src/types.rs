@@ -248,6 +248,9 @@ pub struct Stream {
     pub is_allowance_based: bool,
 }
 
+/// Alias for DataKey representing storage keys in the contract.
+pub type StorageKey = DataKey;
+
 /// A single stream to create inside `batch_create_streams`.
 ///
 /// The batch entrypoint takes one struct per stream rather than N parallel
