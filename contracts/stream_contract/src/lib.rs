@@ -48,7 +48,7 @@ use errors::StreamError;
 use events::{
     emit_admin_transferred, emit_contract_upgraded, emit_emergency_guardian_updated,
     emit_fee_collected, emit_fee_config_updated, emit_hybrid_cliff_stream_created,
-    emit_initialized, emit_protocol_pause_status, emit_state_migrated,
+    emit_initialized, emit_protocol_pause_status, emit_protocol_paused, emit_state_migrated,
     emit_step_vesting_stream_created, emit_stream_cancelled, emit_stream_closed,
     emit_stream_completed, emit_stream_created, emit_stream_paused, emit_stream_resumed,
     emit_stream_topped_up, emit_tokens_withdrawn, AdminTransferredEvent,
@@ -286,6 +286,8 @@ impl StreamContract {
         config.is_protocol_paused = paused;
         save_config(&env, &config);
 
+        emit_protocol_paused(&env, &caller, paused);
+
         emit_protocol_pause_status(
             &env,
             ProtocolPauseStatusEvent {
@@ -296,6 +298,14 @@ impl StreamContract {
         );
 
         Ok(())
+    }
+
+    /// Sets or clears the emergency protocol pause state (#1517).
+    ///
+    /// Delegates to [`Self::set_protocol_pause`] to engage or release the protocol-wide
+    /// circuit breaker. Emits the dedicated [`ProtocolPausedEvent`] via [`emit_protocol_paused`].
+    pub fn set_emergency_pause(env: Env, admin: Address, paused: bool) -> Result<(), StreamError> {
+        Self::set_protocol_pause(env, admin, paused)
     }
 
     /// Returns `true` while the protocol-wide circuit breaker is engaged.
