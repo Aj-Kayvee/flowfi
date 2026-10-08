@@ -27,7 +27,7 @@ async function invoke(address: string, method: 'symbol' | 'decimals' | 'name'): 
       .addOperation(new Contract(address).call(method)).setTimeout(30).build();
     const simulation = await server.simulateTransaction(tx);
     if (rpc.Api.isSimulationError(simulation)) throw new Error(`Contract does not expose ${method}`);
-    const retval = simulation.results?.[0]?.retval;
+    const retval = (simulation as rpc.Api.SimulateTransactionSuccessResponse).result?.retval;
     if (!retval) throw new Error(`Contract does not expose ${method}`);
     return scValToNative(retval);
   });
