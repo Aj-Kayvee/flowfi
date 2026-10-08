@@ -155,7 +155,7 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy

@@ -65,7 +65,6 @@ vi.mock('../src/lib/prisma.js', () => ({
   },
 }));
 
-import { prisma } from '../src/lib/prisma.js';
 
 describe('POST /v1/streams', () => {
   beforeEach(() => {
