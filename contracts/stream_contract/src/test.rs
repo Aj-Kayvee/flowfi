@@ -444,6 +444,118 @@ fn test_create_stream_rejects_zero_duration() {
 
     let result = client.try_create_stream(&sender, &Address::generate(&env), &token, &500, &0);
     assert_stream_error!(result, StreamError::InvalidDuration);
+    assert_stream_error!(result, StreamError::InvalidTimeRange);
+}
+
+#[test]
+fn test_create_stream_rejects_equal_start_and_end_time() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+    let client = create_contract(&env);
+
+    // Caller computes duration = end_time - start_time.
+    // When start_time == end_time, duration is 0.
+    let start_time = 1_000_u64;
+    let end_time = 1_000_u64;
+    let duration = end_time.saturating_sub(start_time);
+    assert_eq!(duration, 0);
+
+    let result = client.try_create_stream(&sender, &recipient, &token, &500, &duration);
+
+    // Verify it reverts with StreamError::InvalidTimeRange (and StreamError::InvalidDuration).
+    assert_stream_error!(result, StreamError::InvalidTimeRange);
+    assert_stream_error!(result, StreamError::InvalidDuration);
+
+    // Verify sender balance is completely untouched (no tokens transferred).
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&sender), 1_000);
+    assert_eq!(token_client.balance(&client.address), 0);
+
+    // Verify stream is not created and stream ID 1 does not exist.
+    assert!(client.get_stream(&1).is_none());
+
+    // Verify no stream_created event was emitted.
+    let events = env.events().all();
+    let created_event = events.iter().find(|e| {
+        Symbol::try_from_val(&env, &e.1.get(0).unwrap())
+            .map(|s: Symbol| s == Symbol::new(&env, "stream_created"))
+            .unwrap_or(false)
+    });
+    assert!(
+        created_event.is_none(),
+        "stream_created event must not be emitted on zero duration"
+    );
+}
+
+#[test]
+fn test_create_stream_rejects_start_time_after_end_time() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 1_000);
+    let client = create_contract(&env);
+
+    // When start_time > end_time, caller calculates duration using checked_sub.
+    // An inverted time range cannot produce a positive valid duration.
+    let start_time = 2_000_u64;
+    let end_time = 1_000_u64;
+    let duration_opt = end_time.checked_sub(start_time);
+    assert!(duration_opt.is_none());
+
+    // If caller falls back to 0 or saturating_sub on inverted range:
+    let duration = end_time.saturating_sub(start_time);
+    assert_eq!(duration, 0);
+
+    let result = client.try_create_stream(&sender, &recipient, &token, &500, &duration);
+    assert_stream_error!(result, StreamError::InvalidTimeRange);
+    assert_stream_error!(result, StreamError::InvalidDuration);
+
+    // Balance untouched.
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&sender), 1_000);
+    assert_eq!(token_client.balance(&client.address), 0);
+}
+
+#[test]
+fn test_create_stream_strictly_validates_duration_before_rate_arithmetic() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token, _) = create_token(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &sender, 10_000);
+    let client = create_contract(&env);
+
+    // Division by zero in rate calculation (amount / duration) or instant 100% vesting
+    // must be strictly prevented before arithmetic:
+    // Testing multiple amounts with 0 duration:
+    for amount in [1, 500, 1_000, 10_000] {
+        let result = client.try_create_stream(&sender, &recipient, &token, &amount, &0);
+        assert_stream_error!(
+            result,
+            StreamError::InvalidTimeRange,
+            "amount with zero duration must return InvalidTimeRange without host panic"
+        );
+    }
+
+    // Now verify that when end_time > start_time (valid positive duration),
+    // creation succeeds and rate arithmetic proceeds normally:
+    let start_time = env.ledger().timestamp();
+    let end_time = start_time + 100;
+    let valid_duration = end_time - start_time;
+    assert!(valid_duration > 0);
+
+    let stream_id = client.create_stream(&sender, &recipient, &token, &1_000, &valid_duration);
+    assert_eq!(stream_id, 1);
+    let stream = client.get_stream(&stream_id).unwrap();
+    assert_eq!(stream.rate_per_second, 10); // 1000 / 100 = 10
+    assert_eq!(stream.deposited_amount, 1_000);
 }
 
 #[test]

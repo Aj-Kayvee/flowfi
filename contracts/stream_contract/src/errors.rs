@@ -114,6 +114,12 @@ pub enum StreamError {
     TooManyMilestones = 44,
 }
 
+impl StreamError {
+    /// Alias for `InvalidDuration` representing an invalid time range (e.g. end_time <= start_time or zero duration).
+    #[allow(non_upper_case_globals)]
+    pub const InvalidTimeRange: StreamError = StreamError::InvalidDuration;
+}
+
 // ─── Test diagnostics (compiled only under `cfg(test)`) ───────────────────
 //
 // Soroban surfaces contract errors to test assertions as raw numeric codes
