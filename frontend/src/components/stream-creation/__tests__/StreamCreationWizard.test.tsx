@@ -14,8 +14,32 @@ vi.mock("@/lib/logger", () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("@/lib/soroban", () => ({
-  fetchTokenBalanceDisplay: vi.fn().mockResolvedValue("10000"),
+vi.mock("@/lib/soroban", () => {
+  class MultisigRequiredError extends Error {
+    constructor(
+      message: string,
+      public readonly signedXdr: string,
+      public readonly routing: unknown,
+    ) {
+      super(message);
+      this.name = "MultisigRequiredError";
+    }
+  }
+
+  return {
+    fetchTokenBalanceDisplay: vi.fn().mockResolvedValue("1000"),
+    MultisigRequiredError,
+  };
+});
+
+vi.mock("../../wallet/MultisigSignModal", () => ({
+  MultisigSignModal: ({ initialXdr }: { initialXdr: string }) => (
+    <div data-testid="multisig-modal">{initialXdr}</div>
+  ),
+}));
+
+vi.mock("@/lib/stellar", () => ({
+  isValidStellarPublicKey: vi.fn((val: string) => /^G[A-Z2-7]{55}$/.test(val)),
 }));
 
 vi.mock("@/utils/amount", () => {
@@ -651,6 +675,39 @@ describe("StreamCreationWizard", () => {
   });
 
   // ── Error handling ────────────────────────────────────────────────────────
+
+  it("opens the multisig co-signing modal when onSubmit needs more signatures", async () => {
+    const { MultisigRequiredError } = await import("@/lib/soroban");
+    const routing = {
+      account: { publicKey: VALID_KEY },
+      progress: { collectedWeight: 1, requiredWeight: 2 },
+      needsProposal: true,
+    } as unknown as ConstructorParameters<typeof MultisigRequiredError>[2];
+    const onSubmit = vi.fn().mockRejectedValue(
+      new MultisigRequiredError("needs signatures", "PARTIAL_XDR_VALUE", routing),
+    );
+    const push = vi.fn();
+    (useRouter as ReturnType<typeof vi.fn>).mockReturnValue({ push });
+
+    render(
+      <StreamCreationWizard
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+        walletPublicKey={VALID_KEY}
+      />
+    );
+
+    advanceToStep5();
+
+    await act(async () => {
+      clickCreate();
+    });
+
+    const modal = await screen.findByTestId("multisig-modal");
+    expect(modal).toHaveTextContent("PARTIAL_XDR_VALUE");
+    // The wizard must not fall through to the indexer-polling UI.
+    expect(screen.queryByText("Waiting for confirmation...")).not.toBeInTheDocument();
+  });
 
   it("catches onSubmit errors and stops submitting", async () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error("wallet rejected"));

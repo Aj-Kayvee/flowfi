@@ -12,6 +12,9 @@ import { TemplateStep } from "./TemplateStep";
 import { transactionSuccessToast } from "@/lib/transaction-feedback";
 import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/lib/api/_shared";
+import { MultisigRequiredError } from "@/lib/soroban";
+import type { MultisigRoutingResult } from "@/lib/stellar-multisig";
+import { MultisigSignModal } from "../wallet/MultisigSignModal";
 import {
   useStreamForm,
   type StreamFormData,
@@ -43,6 +46,13 @@ export const StreamCreationWizard: React.FC<StreamCreationWizardProps> = ({
   const [txHash, setTxHash] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [timeoutError, setTimeoutError] = useState(false);
+
+  // Multisig co-signing state (Issue #1471): populated when the wallet's
+  // signature is below the account's required signing weight.
+  const [multisigProposal, setMultisigProposal] = useState<{
+    xdr: string;
+    routing: MultisigRoutingResult;
+  } | null>(null);
 
   const router = useRouter();
 
@@ -187,6 +197,15 @@ export const StreamCreationWizard: React.FC<StreamCreationWizardProps> = ({
         await startPolling(walletPublicKey || "");
         
       } catch (error) {
+        // Multisig accounts: instead of surfacing a raw broadcast failure,
+        // hand the partial envelope to the co-signing coordinator.
+        if (error instanceof MultisigRequiredError) {
+          logger.info("Multisig co-signing required; opening proposal flow.");
+          setMultisigProposal({ xdr: error.signedXdr, routing: error.routing });
+          setIsSubmitting(false);
+          return;
+        }
+
         logger.error("Failed to create stream:", error);
         setIsSubmitting(false);
       }
@@ -253,6 +272,7 @@ export const StreamCreationWizard: React.FC<StreamCreationWizardProps> = ({
   };
 
   return (
+    <>
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       role="dialog"
@@ -444,5 +464,20 @@ export const StreamCreationWizard: React.FC<StreamCreationWizardProps> = ({
         )}
       </div>
     </div>
+
+    {multisigProposal && (
+      <MultisigSignModal
+        account={multisigProposal.routing.account}
+        initialXdr={multisigProposal.xdr}
+        onClose={() => setMultisigProposal(null)}
+        onSubmitted={(hash) => {
+          setMultisigProposal(null);
+          setTxHash(hash);
+          setIsPolling(true);
+          void startPolling(walletPublicKey || "");
+        }}
+      />
+    )}
+    </>
   );
 };
