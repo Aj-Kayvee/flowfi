@@ -34,6 +34,7 @@ services:
       DB_USER: flowfi
       DB_PASSWORD: flowfi_dev_password
       DB_NAME: flowfi
+      AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 1000
       DEFAULT_POOL_SIZE: 20
