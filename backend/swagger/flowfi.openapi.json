@@ -47,6 +47,10 @@
     {
       "name": "Observability",
       "description": "Prometheus metrics scrape endpoint"
+    },
+    {
+      "name": "Compliance",
+      "description": "Sanctions / OFAC screening and SEP-0009 KYC attestation endpoints"
     }
   ],
   "components": {
@@ -703,6 +707,88 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SentinelIncident": {
+        "type": "object",
+        "required": [
+          "id",
+          "ruleId",
+          "severity",
+          "title",
+          "description",
+          "detectedAt",
+          "threatScore"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ruleId": {
+            "type": "string",
+            "enum": [
+              "VELOCITY_SPIKE",
+              "MULTI_STREAM_DRAIN",
+              "HIGH_VALUE_DRAIN",
+              "TOKEN_VELOCITY_SPIKE",
+              "ZERO_RUNWAY_FLOOD",
+              "STREAM_CREATION_SPIKE"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stellar public key involved"
+          },
+          "token": {
+            "type": "string",
+            "nullable": true
+          },
+          "streamId": {
+            "type": "string",
+            "nullable": true
+          },
+          "ledger": {
+            "type": "integer",
+            "nullable": true
+          },
+          "detectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "threatScore": {
+            "type": "integer",
+            "description": "Per-incident severity weight (10-90)"
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "circuitBreaker": {
+            "type": "object",
+            "nullable": true,
+            "description": "HMAC-signed emergency pause proposal (CRITICAL incidents only)",
+            "additionalProperties": true
+          },
+          "acknowledged": {
+            "type": "boolean"
           }
         }
       },
@@ -3178,6 +3264,161 @@
         }
       }
     },
+    "/v1/compliance/kyc-attestation": {
+      "post": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Submit a SEP-0009 KYC/AML attestation",
+        "description": "Allows an organization to submit a cryptographic proof of identity\nverification for a wallet, following the SEP-0009 (Standard KYC / AML\nFields) schema. Attestations are stored as PENDING for out-of-band\nreview and are recorded in the compliance audit trail.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "subjectAddress",
+                  "proof",
+                  "fields"
+                ],
+                "properties": {
+                  "subjectAddress": {
+                    "type": "string",
+                    "description": "Stellar public key the identity belongs to"
+                  },
+                  "organization": {
+                    "type": "string",
+                    "description": "Organization identifier; defaults to the authenticated wallet"
+                  },
+                  "proof": {
+                    "type": "string",
+                    "description": "Cryptographic proof / signature over the identity payload"
+                  },
+                  "proofType": {
+                    "type": "string",
+                    "enum": [
+                      "ed25519",
+                      "secp256k1",
+                      "stellar-signature"
+                    ]
+                  },
+                  "fields": {
+                    "type": "object",
+                    "description": "SEP-0009 KYC/AML fields (snake_case, vendor fields passthrough)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attestation accepted for review"
+          },
+          "400": {
+            "description": "Invalid attestation payload"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/v1/compliance/screen": {
+      "post": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Screen an address against sanctions data",
+        "description": "Runs the configured sanctions / risk screening provider for a wallet\naddress and returns the result. Results are cached for the configured\nTTL. Requires authentication to prevent open enumeration.\n",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "description": "Stellar public key to screen"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Screening result"
+          },
+          "400": {
+            "description": "Invalid request body"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication"
+          },
+          "503": {
+            "description": "Screening provider unavailable"
+          }
+        }
+      }
+    },
+    "/v1/compliance/screen/{address}": {
+      "get": {
+        "tags": [
+          "Compliance"
+        ],
+        "summary": "Screen a wallet address (read-only)",
+        "description": "Convenience GET variant of /v1/compliance/screen for audit tooling.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Stellar public key to screen"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Screening result"
+          },
+          "400": {
+            "description": "Address is required"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication"
+          },
+          "503": {
+            "description": "Screening provider unavailable"
+          }
+        }
+      }
+    },
     "/v1/auth/challenge": {
       "post": {
         "tags": [
@@ -3921,6 +4162,175 @@
           },
           "404": {
             "description": "Dead-letter event not found"
+          }
+        }
+      }
+    },
+    "/v1/admin/sentinel/alerts": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List sentinel anomalies, threat score, and flagged addresses",
+        "description": "Returns the real-time anomaly dashboard backing the drain sentinel:\nthe aggregate 0-100 threat score, the addresses implicated in recent\nanomalies, and the incident history (newest first). Filter by\n`severity`, `address`, or page with `limit`.\n",
+        "security": [
+          {
+            "adminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "severity",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "address",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Stellar public key to filter incidents by"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sentinel dashboard snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "threatScore": {
+                      "type": "object",
+                      "properties": {
+                        "score": {
+                          "type": "integer",
+                          "example": 75
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ]
+                        },
+                        "incidentCount": {
+                          "type": "integer"
+                        },
+                        "bySeverity": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "windowMinutes": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "flaggedAddresses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "type": "string"
+                          },
+                          "threatScore": {
+                            "type": "integer"
+                          },
+                          "incidentCount": {
+                            "type": "integer"
+                          },
+                          "highestSeverity": {
+                            "type": "string"
+                          },
+                          "lastIncidentAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "incidents": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SentinelIncident"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "generatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid severity filter"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid authentication token"
+          },
+          "403": {
+            "description": "Forbidden - admin access required"
+          }
+        }
+      }
+    },
+    "/v1/admin/sentinel/alerts/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Acknowledge a sentinel incident",
+        "security": [
+          {
+            "adminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Incident acknowledged"
+          },
+          "404": {
+            "description": "Incident not found"
           }
         }
       }

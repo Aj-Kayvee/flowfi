@@ -2204,6 +2204,210 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/compliance/kyc-attestation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a SEP-0009 KYC/AML attestation
+         * @description Allows an organization to submit a cryptographic proof of identity
+         *     verification for a wallet, following the SEP-0009 (Standard KYC / AML
+         *     Fields) schema. Attestations are stored as PENDING for out-of-band
+         *     review and are recorded in the compliance audit trail.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Stellar public key the identity belongs to */
+                        subjectAddress: string;
+                        /** @description Organization identifier; defaults to the authenticated wallet */
+                        organization?: string;
+                        /** @description Cryptographic proof / signature over the identity payload */
+                        proof: string;
+                        /** @enum {string} */
+                        proofType?: "ed25519" | "secp256k1" | "stellar-signature";
+                        /** @description SEP-0009 KYC/AML fields (snake_case, vendor fields passthrough) */
+                        fields: Record<string, never>;
+                    };
+                };
+            };
+            responses: {
+                /** @description Attestation accepted for review */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid attestation payload */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Unauthorized - missing or invalid authentication */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/compliance/screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Screen an address against sanctions data
+         * @description Runs the configured sanctions / risk screening provider for a wallet
+         *     address and returns the result. Results are cached for the configured
+         *     TTL. Requires authentication to prevent open enumeration.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Stellar public key to screen */
+                        address: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Screening result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid request body */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Unauthorized - missing or invalid authentication */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Screening provider unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/compliance/screen/{address}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Screen a wallet address (read-only)
+         * @description Convenience GET variant of /v1/compliance/screen for audit tooling.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Stellar public key to screen */
+                    address: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Screening result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Address is required */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Unauthorized - missing or invalid authentication */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Screening provider unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/challenge": {
         parameters: {
             query?: never;
@@ -2926,6 +3130,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/sentinel/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sentinel anomalies, threat score, and flagged addresses
+         * @description Returns the real-time anomaly dashboard backing the drain sentinel:
+         *     the aggregate 0-100 threat score, the addresses implicated in recent
+         *     anomalies, and the incident history (newest first). Filter by
+         *     `severity`, `address`, or page with `limit`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+                    /** @description Stellar public key to filter incidents by */
+                    address?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sentinel dashboard snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            threatScore?: {
+                                /** @example 75 */
+                                score?: number;
+                                /** @enum {string} */
+                                level?: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+                                incidentCount?: number;
+                                bySeverity?: {
+                                    [key: string]: number;
+                                };
+                                windowMinutes?: number;
+                            };
+                            flaggedAddresses?: {
+                                address?: string;
+                                threatScore?: number;
+                                incidentCount?: number;
+                                highestSeverity?: string;
+                                /** Format: date-time */
+                                lastIncidentAt?: string;
+                            }[];
+                            incidents?: components["schemas"]["SentinelIncident"][];
+                            count?: number;
+                            /** Format: date-time */
+                            generatedAt?: string;
+                        };
+                    };
+                };
+                /** @description Invalid severity filter */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Unauthorized - missing or invalid authentication token */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Forbidden - admin access required */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/sentinel/alerts/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge a sentinel incident */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Incident acknowledged */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Incident not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3229,6 +3568,33 @@ export interface components {
             active: boolean;
             /** Format: date-time */
             createdAt: string;
+        };
+        SentinelIncident: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            ruleId: "VELOCITY_SPIKE" | "MULTI_STREAM_DRAIN" | "HIGH_VALUE_DRAIN" | "TOKEN_VELOCITY_SPIKE" | "ZERO_RUNWAY_FLOOD" | "STREAM_CREATION_SPIKE";
+            /** @enum {string} */
+            severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+            title: string;
+            description: string;
+            /** @description Stellar public key involved */
+            address?: string | null;
+            token?: string | null;
+            streamId?: string | null;
+            ledger?: number | null;
+            /** Format: date-time */
+            detectedAt: string;
+            /** @description Per-incident severity weight (10-90) */
+            threatScore: number;
+            evidence?: {
+                [key: string]: unknown;
+            };
+            /** @description HMAC-signed emergency pause proposal (CRITICAL incidents only) */
+            circuitBreaker?: {
+                [key: string]: unknown;
+            } | null;
+            acknowledged?: boolean;
         };
         HealthResponse: {
             /**
