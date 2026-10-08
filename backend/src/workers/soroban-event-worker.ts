@@ -3,6 +3,7 @@ import { rpc, xdr, StrKey } from "@stellar/stellar-sdk";
 import { prisma } from "../lib/prisma.js";
 import { INDEXER_STATE_ID, ensureIndexerState } from "../lib/indexer-state.js";
 import { sseService } from "../services/sse.service.js";
+import { sentinelService } from "../services/sentinel.service.js";
 import { publishIndexerLag, quarantineEvent } from "../services/indexerService.js";
 import {
   indexerEventsProcessedTotal,
@@ -27,6 +28,13 @@ const REORG_ALERT_THRESHOLD_DEFAULT = 5;
 
 // ─── XDR Decoding Helpers ────────────────────────────────────────────────────
 
+/** Use the ledger close time, not worker processing time, for historical state changes. */
+export function getEventLedgerTimestamp(event: Pick<rpc.Api.EventResponse, 'ledgerClosedAt'>): number {
+  const ledgerTimestamp = Number(event.ledgerClosedAt);
+  return Number.isSafeInteger(ledgerTimestamp) && ledgerTimestamp >= 0
+    ? ledgerTimestamp
+    : Math.floor(Date.now() / 1000);
+}
 /** Decode an ScVal symbol to a string. */
 export function decodeSymbol(val: xdr.ScVal): string {
   return (val as xdr.ScValSymbol).sym.toString();
@@ -802,6 +810,13 @@ export class SorobanEventWorker {
         ? null
         : startTime + BigInt(depositedAmount) / ratePerSecondBigInt;
 
+    // Runway is how long the deposit lasts at the current rate; a zero rate
+    // never depletes. Feeds the sentinel's zero-runway flood heuristic.
+    const runwaySeconds =
+      ratePerSecondBigInt > 0n
+        ? Number(BigInt(depositedAmount) / ratePerSecondBigInt)
+        : Number.POSITIVE_INFINITY;
+
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.user.upsert({
         where: { publicKey: sender },
@@ -889,6 +904,23 @@ export class SorobanEventWorker {
       transactionHash: event.txHash,
       ledger: event.ledger,
     });
+
+    // Sentinel anomaly detection (#1469) is best-effort: an analysis failure
+    // must never quarantine a well-formed on-chain event.
+    try {
+      await sentinelService.recordStreamCreation({
+        sender,
+        token: tokenAddress,
+        streamId: String(streamId),
+        runwaySeconds,
+        ledger: event.ledger,
+      });
+    } catch (error) {
+      logger.warn(
+        `[SorobanWorker] Sentinel stream-creation analysis failed for #${streamId}:`,
+        error,
+      );
+    }
   }
 
   private async handleStreamToppedUp(
@@ -999,6 +1031,11 @@ export class SorobanEventWorker {
     const amount = decodeI128(body["amount"]);
     const timestamp = Number(decodeU64(body["timestamp"]));
 
+    // Captured inside the transaction so the sentinel can weigh this
+    // withdrawal against the stream's total deposit once it commits.
+    let streamDeposited: string | undefined;
+    let streamToken: string | undefined;
+
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Check for a duplicate BEFORE mutating any Stream fields so that a
       // replayed event never double-increments withdrawnAmount.
@@ -1020,8 +1057,14 @@ export class SorobanEventWorker {
 
       const stream = await tx.stream.findUniqueOrThrow({
         where: { streamId },
-        select: { withdrawnAmount: true },
+        select: {
+          withdrawnAmount: true,
+          depositedAmount: true,
+          tokenAddress: true,
+        },
       });
+      streamDeposited = stream.depositedAmount;
+      streamToken = stream.tokenAddress;
 
       const newWithdrawnAmount = (
         BigInt(stream.withdrawnAmount) + BigInt(amount)
@@ -1066,6 +1109,25 @@ export class SorobanEventWorker {
       ledger: event.ledger,
       timestamp,
     });
+
+    // Feed the drain sentinel (#1469). Best-effort: analysis must not
+    // quarantine a valid withdrawal event.
+    try {
+      await sentinelService.recordWithdrawal({
+        address: recipient,
+        token: streamToken ?? "unknown",
+        amount,
+        streamId: String(streamId),
+        ledger: event.ledger,
+        txHash: event.txHash,
+        ...(streamDeposited !== undefined ? { streamDeposited } : {}),
+      });
+    } catch (error) {
+      logger.warn(
+        `[SorobanWorker] Sentinel withdrawal analysis failed for #${streamId}:`,
+        error,
+      );
+    }
   }
 
   private async handleStreamCancelled(
@@ -1081,7 +1143,7 @@ export class SorobanEventWorker {
 
     const amountWithdrawn = decodeI128(body["amount_withdrawn"]);
     const refundedAmount = decodeI128(body["refunded_amount"]);
-    const timestamp = Math.floor(Date.now() / 1000);
+    const timestamp = getEventLedgerTimestamp(event);
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.stream.update({
@@ -1154,7 +1216,7 @@ export class SorobanEventWorker {
 
     const recipient = decodeAddress(body["recipient"]);
     const totalWithdrawn = decodeI128(body["total_withdrawn"]);
-    const timestamp = Math.floor(Date.now() / 1000);
+    const timestamp = getEventLedgerTimestamp(event);
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.stream.update({
@@ -1288,7 +1350,7 @@ export class SorobanEventWorker {
 
     const sender = decodeAddress(body["sender"]);
     const pausedAt = Number(decodeU64(body["paused_at"]));
-    const timestamp = Math.floor(Date.now() / 1000);
+    const timestamp = getEventLedgerTimestamp(event);
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.stream.update({
@@ -1360,7 +1422,7 @@ export class SorobanEventWorker {
 
     const sender = decodeAddress(body["sender"]);
     const newEndTime = decodeU64(body["new_end_time"]);
-    const timestamp = Math.floor(Date.now() / 1000);
+    const timestamp = getEventLedgerTimestamp(event);
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Get current stream to calculate paused duration

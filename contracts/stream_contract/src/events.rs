@@ -324,6 +324,16 @@ pub struct StreamClosedEvent {
     pub timestamp: u64,
 }
 
+/// Dedicated event emitted on protocol pause toggle (#1517).
+///
+/// Topics: `("FlowFi", "ProtocolPaused")`
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolPausedEvent {
+    pub admin: Address,
+    pub is_paused: bool,
+}
+
 /// Emitted when a conditional milestone's condition verifies true (#1482).
 ///
 /// Topic: `("milestone_condition_unlocked", stream_id)`
@@ -599,6 +609,31 @@ pub fn emit_stream_resumed(env: &Env, event: StreamResumedEvent) {
 pub fn emit_protocol_pause_status(env: &Env, event: ProtocolPauseStatusEvent) {
     env.events()
         .publish((Symbol::new(env, "protocol_pause_status"),), event);
+}
+
+/// Emits the dedicated ProtocolPaused event on pause toggle (#1517).
+///
+/// # Event topic
+/// `("FlowFi", "ProtocolPaused")`.
+///
+/// # Emission trigger
+/// `set_protocol_pause` / `set_emergency_pause`, whenever the circuit breaker flips state.
+///
+/// # Parameters
+/// - `env` — the Soroban environment to publish into.
+/// - `admin` — caller address that triggered the pause change.
+/// - `is_paused` — the new pause state.
+pub fn emit_protocol_paused(env: &Env, admin: &Address, is_paused: bool) {
+    env.events().publish(
+        (
+            Symbol::new(env, "FlowFi"),
+            Symbol::new(env, "ProtocolPaused"),
+        ),
+        ProtocolPausedEvent {
+            admin: admin.clone(),
+            is_paused,
+        },
+    );
 }
 
 /// Emit an `emergency_guardian_updated` event.

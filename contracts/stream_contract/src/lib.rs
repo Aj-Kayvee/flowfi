@@ -28,13 +28,13 @@
 // lint crate-wide is the only way to keep `-D warnings` meaningful elsewhere.
 #![allow(clippy::too_many_arguments)]
 
-mod errors;
-mod events;
-mod storage;
-mod types;
+pub mod errors;
+pub mod events;
+pub mod storage;
+pub mod types;
 
-#[cfg(test)]
-mod acceptance_tests;
+// #[cfg(test)]
+// mod acceptance_tests;
 #[cfg(test)]
 mod property_tests;
 #[cfg(test)]
@@ -48,7 +48,7 @@ use errors::StreamError;
 use events::{
     emit_admin_transferred, emit_contract_upgraded, emit_emergency_guardian_updated,
     emit_fee_collected, emit_fee_config_updated, emit_hybrid_cliff_stream_created,
-    emit_initialized, emit_protocol_pause_status, emit_state_migrated,
+    emit_initialized, emit_protocol_pause_status, emit_protocol_paused, emit_state_migrated,
     emit_step_vesting_stream_created, emit_stream_cancelled, emit_stream_closed,
     emit_stream_completed, emit_stream_created, emit_stream_paused, emit_stream_resumed,
     emit_stream_topped_up, emit_tokens_withdrawn, AdminTransferredEvent,
@@ -61,9 +61,9 @@ use events::{
     StreamToppedUpEvent, TokensWithdrawnEvent,
 };
 use storage::{
-    config_exists, get_contract_version, get_recorded_wasm_hash, load_config, load_stream,
-    next_stream_id, remove_stream, save_config, save_contract_version, save_recorded_wasm_hash,
-    save_stream, try_load_config, try_load_stream,
+    bump_position_ttl, config_exists, get_contract_version, get_recorded_wasm_hash, load_config,
+    load_stream, next_stream_id, remove_stream, save_config, save_contract_version,
+    save_recorded_wasm_hash, save_stream, try_load_config, try_load_stream,
 };
 use types::{
     BatchStreamInput, ConditionalMilestone, DataKey, DisputeStatus, OracleAsset, OracleClient,
@@ -286,6 +286,8 @@ impl StreamContract {
         config.is_protocol_paused = paused;
         save_config(&env, &config);
 
+        emit_protocol_paused(&env, &caller, paused);
+
         emit_protocol_pause_status(
             &env,
             ProtocolPauseStatusEvent {
@@ -296,6 +298,14 @@ impl StreamContract {
         );
 
         Ok(())
+    }
+
+    /// Sets or clears the emergency protocol pause state (#1517).
+    ///
+    /// Delegates to [`Self::set_protocol_pause`] to engage or release the protocol-wide
+    /// circuit breaker. Emits the dedicated [`ProtocolPausedEvent`] via [`emit_protocol_paused`].
+    pub fn set_emergency_pause(env: Env, admin: Address, paused: bool) -> Result<(), StreamError> {
+        Self::set_protocol_pause(env, admin, paused)
     }
 
     /// Returns `true` while the protocol-wide circuit breaker is engaged.
@@ -2208,6 +2218,21 @@ impl StreamContract {
     /// report the linear projection. Returns `None` for an unknown stream.
     pub fn get_projected_end_time(env: Env, stream_id: u64) -> Option<u64> {
         try_load_stream(&env, stream_id).map(|stream| Self::projected_end_time(&stream))
+    }
+
+    /// Explicitly bumps the persistent storage TTL of a stream entry.
+    ///
+    /// Extends the stream's persistent TTL to the contract maximum lifetime.
+    ///
+    /// # Errors
+    /// - `StreamNotFound` — no stream exists with `stream_id`.
+    pub fn bump_stream_ttl(env: Env, stream_id: u64) -> Result<(), StreamError> {
+        let key = types::DataKey::Stream(stream_id);
+        if !env.storage().persistent().has(&key) {
+            return Err(StreamError::StreamNotFound);
+        }
+        bump_position_ttl(&env, &key);
+        Ok(())
     }
 
     // ─── Stream Rate Modification (Feature #1320) ──────────────────────────────

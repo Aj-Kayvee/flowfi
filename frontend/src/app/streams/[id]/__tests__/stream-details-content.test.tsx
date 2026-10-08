@@ -227,6 +227,9 @@ describe("StreamDetailsContent loading skeleton", () => {
     // Skeleton should be gone
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
 
+    // Stream-specific content should be visible (the header and receipt rows
+    // both reference the stream id, so assert on all matches).
+    expect(screen.getAllByText(/stream #42/i).length).toBeGreaterThan(0);
     // Stream-specific content should be visible
     expect(screen.getAllByText(/stream #42/i).length).toBeGreaterThanOrEqual(1);
   });
