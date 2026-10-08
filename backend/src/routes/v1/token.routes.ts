@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getToken } from '../../controllers/token.controller.js';
 import { createHash } from 'node:crypto';
 import {
   getTokenMetadataUpdatedAt,
@@ -101,5 +102,7 @@ router.get('/', (req: Request, res: Response) => {
 
   res.status(200).type('application/json').send(body);
 });
+
+router.get('/:address', getToken);
 
 export default router;
