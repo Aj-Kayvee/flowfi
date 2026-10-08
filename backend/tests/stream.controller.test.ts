@@ -6,6 +6,7 @@ import * as sorobanService from '../src/services/sorobanService.js';
 import type { Request, Response } from 'express';
 
 vi.mock('../src/lib/prisma.js', () => ({
+  withReplicaFallback: (query: (client: any) => unknown) => Promise.resolve(query(prisma)),
   prisma: {
     stream: {
       upsert: vi.fn(),
